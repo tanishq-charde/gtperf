@@ -6,6 +6,7 @@ import argparse
 import json
 import tomllib
 
+from .aero import Flight
 from .components import Combustor, Compressor, Turbine
 from .cycle import Ambient, SimpleCycle
 from .fuel import Fuel, natural_gas
@@ -121,6 +122,28 @@ def turbofan_from_config(cfg):
     return engine, Flight(**cfg.get("flight", {}))
 
 
+OFFDESIGN_COLUMNS = ("altitude_m", "mach", "control", "net_thrust_kN", "tsfc_mg_per_Ns", "air_flow_kg_s",
+                     "bypass_ratio", "tet_K", "n1", "n2", "surge_margin_fan", "surge_margin_booster",
+                     "surge_margin_hpc")
+
+
+def turbofan_offdesign_table(engine, points):
+    """Off-design points for `gtperf turbofan --offdesign`. Each point has altitude_m, mach, optional
+    isa_dt and at most one of tet_K, n1 or net_thrust_kN (default: the design TET)."""
+    rows, guess = [], None
+    for pt in points:
+        flight = Flight(pt.get("altitude_m", 0.0), pt.get("mach", 0.0), pt.get("isa_dt", 0.0))
+        setting = {k: pt[c] * f for k, c, f in (("tet", "tet_K", 1), ("n1", "n1", 1), ("thrust", "net_thrust_kN", 1e3))
+                   if c in pt}
+        r = engine.run(flight, guess=guess, **setting)
+        guess = r.info["x"]
+        s = r.summary()
+        rows.append({"altitude_m": flight.altitude_m, "mach": flight.mach, "control": r.info["control"],
+                     **{k: s[k] for k in ("net_thrust_kN", "tsfc_mg_per_Ns", "air_flow_kg_s", "bypass_ratio", "tet_K")},
+                     **{k: r.info[k] for k in OFFDESIGN_COLUMNS[8:]}})
+    return rows
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="gtperf", description="Gas turbine performance toolkit")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -141,6 +164,8 @@ def main(argv=None):
     fan = sub.add_parser("turbofan", help="two-spool turbofan design point from a TOML file")
     fan.add_argument("config")
     fan.add_argument("--json", action="store_true", help="print the summary as JSON")
+    fan.add_argument("--offdesign", action="store_true",
+                     help="match the engine off design at the [offdesign] points (default: a few flight conditions)")
     excel = sub.add_parser("excel", help="write the Excel site performance tool for a calibrated engine")
     excel.add_argument("datasheet")
     excel.add_argument("output", help="workbook to write, e.g. site_tool.xlsx")
@@ -166,6 +191,22 @@ def main(argv=None):
             cfg = tomllib.load(f)
         engine, flight = turbofan_from_config(cfg)
         w = cfg.get("air_flow_kg_s") or engine.size_for_thrust(cfg["net_thrust_kN"] * 1e3, flight)
+        if args.offdesign:
+            from .aero_offdesign import TurbofanEngine
+
+            od = TurbofanEngine(engine, w, flight)
+            points = cfg.get("offdesign", {}).get("points") or [
+                {"altitude_m": flight.altitude_m, "mach": flight.mach}, {"altitude_m": 0.0, "mach": 0.0},
+                {"altitude_m": 0.0, "mach": 0.25}, {"altitude_m": 5000.0, "mach": 0.6}]
+            rows = turbofan_offdesign_table(od, points)
+            if args.json:
+                print(json.dumps(rows, indent=2))
+            else:
+                print(f"{cfg.get('name', 'turbofan')}: off-design\n")
+                print("".join(f"{c[:12]:>13s}" for c in OFFDESIGN_COLUMNS))
+                for r in rows:
+                    print("".join(f"{v:>13s}" if isinstance(v, str) else f"{v:13.4g}" for v in r.values()))
+            return
         result = engine.run(w, flight)
         if args.json:
             print(json.dumps(result.summary(), indent=2))

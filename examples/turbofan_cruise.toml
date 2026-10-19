@@ -27,3 +27,13 @@ intake_recovery = 0.995
 combustor_dp = 0.04
 cooling_fraction = 0.10
 hp_offtake_kW = 150.0
+
+[offdesign]                   # points for `gtperf turbofan --offdesign`; each takes tet_K, n1 or net_thrust_kN
+points = [
+  { altitude_m = 10668, mach = 0.78 },                  # design point (design TET)
+  { altitude_m = 10668, mach = 0.78, net_thrust_kN = 15.0 },
+  { altitude_m = 0, mach = 0.0, tet_K = 1750 },          # take-off, static
+  { altitude_m = 0, mach = 0.25, tet_K = 1750 },         # take-off roll
+  { altitude_m = 5000, mach = 0.6, tet_K = 1700 },       # climb
+  { altitude_m = 0, mach = 0.0, n1 = 0.36 },             # ground idle
+]
