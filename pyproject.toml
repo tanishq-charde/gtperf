@@ -21,6 +21,10 @@ gtperf = "gtperf.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+
+[tool.setuptools.package-data]
+"gtperf.data.maps" = ["*.json", "NOTICE"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
