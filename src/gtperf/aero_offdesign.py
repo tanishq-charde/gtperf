@@ -326,8 +326,8 @@ class TurbofanEngine:
             try:
                 with np.errstate(all="ignore"):
                     r = np.array(full(z)[0], dtype=float)
-            except (ValueError, RuntimeError, ZeroDivisionError, OverflowError, TypeError):
-                r = None  # TypeError: complex numbers from negative pressure ratios
+            except (ValueError, RuntimeError, ZeroDivisionError, OverflowError, TypeError, AttributeError):
+                r = None  # TypeError: complex numbers from negative pressure ratios; AttributeError: no jet
             if r is None or not np.all(np.isfinite(r)):
                 return np.full(len(z), 10.0)  # outside the physical domain: push the solver back
             return r
