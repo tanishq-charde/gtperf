@@ -18,6 +18,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+from matplotlib.category import StrCategoryFormatter  # noqa: E402
+from matplotlib.text import Text  # noqa: E402
+from matplotlib.ticker import FuncFormatter  # noqa: E402
 
 from ..cli import engine_from_config  # noqa: E402
 from ..cycle import ISO, Ambient  # noqa: E402
@@ -31,9 +34,93 @@ if not DEFAULT_DATASHEET.exists():
     DEFAULT_DATASHEET = Path(__file__).resolve().parents[1] / "data" / "sgt400_13mw.toml"
 
 # Brand colours: the logo's navy, one accent, and status colours
-NAVY, BLUE, RED, GREEN, AMBER = "#14294b", "#2a78d6", "#d03b3b", "#2f8f5b", "#c98a12"
-INK, INK2, GRID, SURFACE = "#16181c", "#5b6270", "#d9dce1", "#ffffff"
-SERIES = [NAVY, BLUE, "#7aa7e0", AMBER, RED, GREEN]
+NAVY, BLUE, RED, GREEN, AMBER = "#12224a", "#2a5fa8", "#b0302d", "#2f7d4f", "#b07a10"
+INK, INK2, GRID, SURFACE = "#000000", "#333333", "#d9d6cc", "none"
+SERIES = [NAVY, BLUE, "#7d9cc9", AMBER, RED, GREEN]
+
+# Charts look like LaTeX (pgfplots) figures: Computer Modern text, a full box, inward ticks on all sides.
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.serif": ["cmr10"],
+        "mathtext.fontset": "cm",
+        "axes.formatter.use_mathtext": True,
+        "axes.unicode_minus": True,
+        "font.size": 10,
+        "axes.linewidth": 0.8,
+        "axes.edgecolor": INK,
+        "axes.labelcolor": INK,
+        "xtick.color": INK,
+        "ytick.color": INK,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "xtick.top": True,
+        "ytick.right": True,
+        "xtick.minor.visible": True,
+        "ytick.minor.visible": True,
+        "xtick.major.size": 4,
+        "ytick.major.size": 4,
+        "xtick.minor.size": 2,
+        "ytick.minor.size": 2,
+        "lines.linewidth": 1.3,
+        "lines.markersize": 4,
+        "legend.frameon": True,
+        "legend.fancybox": False,
+        "legend.edgecolor": INK,
+        "legend.framealpha": 1.0,
+        "patch.linewidth": 0.6,
+        "savefig.transparent": False,
+    }
+)
+# cmr10 maps code points above ASCII, and a few within it, to other glyphs, so those characters are written in math mode
+_TEX = {
+    "°": r"^\circ",
+    "±": r"\pm",
+    "−": "-",
+    "·": r"\cdot",
+    "×": r"\times",
+    "≥": r"\geq",
+    "≤": r"\leq",
+    "→": r"\rightarrow",
+    "≈": r"\approx",
+    "Δ": r"\Delta",
+    "η": r"\eta",
+    "²": "^2",
+    "³": "^3",
+    "₂": "_2",
+    "₄": "_4",
+    "_": r"\_",  # OT1 encoding puts accents and other glyphs at these ASCII positions
+    "<": "<",
+    ">": ">",
+    "|": "|",
+    "{": r"\{",
+    "}": r"\}",
+}
+
+
+def tex(text):
+    """Make a label safe for Computer Modern: non-ASCII characters go through math mode."""
+    if not text or "$" in text or (text.isascii() and not any(c in _TEX for c in text)):
+        return text
+    out = []
+    for c in text:
+        if c.isascii() and c not in _TEX:
+            out.append(c)
+        else:
+            out.append("$" + _TEX.get(c, r"\mathrm{" + c + "}") + "$")
+    return "".join(out).replace("$$", "")
+
+
+def latexify(fig):
+    for t in fig.findobj(Text):
+        t.set_text(tex(t.get_text()))
+    for ax in fig.axes:
+        for axis in (ax.xaxis, ax.yaxis):
+            if isinstance(axis.get_major_formatter(), StrCategoryFormatter):
+                f = axis.get_major_formatter()
+                axis.set_major_formatter(FuncFormatter(lambda x, pos, f=f: tex(f(x, pos))))
+                axis.set_minor_locator(plt.NullLocator())
+    return fig
 
 
 @dataclass
@@ -46,32 +133,30 @@ class Section:
     figures: dict = field(default_factory=dict)  # name -> matplotlib Figure
     notes: list = field(default_factory=list)
 
+    def __post_init__(self):
+        for fig in self.figures.values():
+            latexify(fig)
+
 
 def style(ax, title=None, xlabel=None, ylabel=None):
     ax.set_facecolor(SURFACE)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    for side in ("left", "bottom"):
-        ax.spines[side].set_color(INK2)
-    ax.tick_params(colors=INK2, labelsize=9)
-    ax.grid(True, color=GRID, lw=0.7)
-    ax.set_axisbelow(True)
+    ax.grid(False)
     if title:
-        ax.set_title(title, loc="left", fontsize=11, color=INK, fontweight="bold")
+        ax.set_title(title, fontsize=11, color=INK)
     if xlabel:
-        ax.set_xlabel(xlabel, color=INK2, fontsize=9)
+        ax.set_xlabel(xlabel)
     if ylabel:
-        ax.set_ylabel(ylabel, color=INK2, fontsize=9)
+        ax.set_ylabel(ylabel)
 
 
 def figure(w=7.0, h=4.0, ncols=1):
     fig, axes = plt.subplots(1, ncols, figsize=(w, h), constrained_layout=True)
-    fig.patch.set_facecolor(SURFACE)
+    fig.patch.set_facecolor("white")
     return fig, axes
 
 
 def legend(ax, **kw):
-    ax.legend(frameon=False, fontsize=8, labelcolor=INK2, **kw)
+    ax.legend(fontsize=8, **kw)
 
 
 # --- engine ----------------------------------------------------------------------------------------
@@ -606,7 +691,7 @@ def fleet_section(model, n_engines=6, days=365, interval=3, dispatch="base", fau
     dz = m.dz.loc[m.dz.index.intersection(data.index[sel])]
     days_sel = data.loc[dz.index, "day"]
     fig, axes = plt.subplots(3, 1, figsize=(8, 6.5), sharex=True, constrained_layout=True)
-    fig.patch.set_facecolor(SURFACE)
+    fig.patch.set_facecolor("white")
     for ax, col, label, c in zip(
         axes,
         ["d_power", "d_egt", "d_fuel_flow"],
@@ -626,10 +711,7 @@ def fleet_section(model, n_engines=6, days=365, interval=3, dispatch="base", fau
         style(ax, ylabel=label)
     axes[0].set_title(
         f"Engine {e_plot}: deltas against the baseline (green: wash, amber: fault, red: alarm)",
-        loc="left",
         fontsize=11,
-        color=INK,
-        fontweight="bold",
     )
     axes[-1].set_xlabel("Day", color=INK2)
     detected = int(sc["detected_day"].notna().sum())

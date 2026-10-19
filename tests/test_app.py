@@ -78,7 +78,7 @@ from streamlit.testing.v1 import AppTest
 at = AppTest.from_file({str(app)!r}, default_timeout=300).run()
 assert not at.exception, at.exception
 for page in ["Engine", "Site performance", "Reports & downloads"]:
-    at.sidebar.radio[0].set_value(page).run()
+    at.selectbox(key="study").set_value(page).run()
     assert not at.exception, (page, at.exception)
 """
     done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=600)
