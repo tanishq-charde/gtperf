@@ -12,7 +12,7 @@ source = "Example contract guarantee for the SGT-400 13 MW package"
 method = "T"
 acceptance = "Corrected value above the limit with probability of conformance reported; tests in another control mode rejected"
 tests = ["test_conformity_verdicts", "test_result_within_uncertainty_of_truth", "test_speed_limited_test_is_flagged"]
-evidence = "docs/passoff/report.md: 12.724 ± 0.048 MW, PASS"
+evidence = "docs/passoff/report.md: 12.695 ± 0.016 MW, PASS"
 
 [[requirement]]
 id = "G-02"
@@ -22,7 +22,7 @@ source = "Example contract guarantee"
 method = "T"
 acceptance = "As G-01"
 tests = ["test_conformity_verdicts", "test_tight_guarantee_fails"]
-evidence = "docs/passoff/report.md: 10,317 ± 57 kJ/kWh, PASS"
+evidence = "docs/passoff/report.md: 10,340 ± 27 kJ/kWh, PASS"
 
 [[requirement]]
 id = "G-03"
@@ -32,7 +32,7 @@ source = "Example contract guarantee"
 method = "T"
 acceptance = "As G-01; exhaust rake profile under-sampling included in the uncertainty"
 tests = ["test_conformity_verdicts", "test_validation_catches_every_injected_fault"]
-evidence = "docs/passoff/report.md: 551.2 ± 1.9 °C, PASS"
+evidence = "docs/passoff/report.md: 552.8 ± 1.4 °C, PASS"
 
 [[requirement]]
 id = "S-01"
@@ -52,7 +52,7 @@ source = "Test code practice (ASME PTC 22 / ISO 2314 style)"
 method = "A"
 acceptance = "U95 at most 0.5 % of output; repeat-test coverage of the truth between 90 and 99 %"
 tests = ["test_gum_and_monte_carlo_agree", "test_result_within_uncertainty_of_truth"]
-evidence = "examples/coverage_study.py: U95 0.38 %, coverage 95.5 % for output"
+evidence = "examples/coverage_study.py: U95 0.13 %, coverage 97 % for output (100 tests)"
 
 [[requirement]]
 id = "M-02"
@@ -82,7 +82,7 @@ source = "Validation anchor"
 method = "T"
 acceptance = "Fitted values exact; exhaust temperature within 10 K"
 tests = ["test_calibration_hits_datasheet"]
-evidence = "README calibration table: 550.2 °C against 555 °C"
+evidence = "README calibration table: 550.3 °C against 555 °C"
 
 [[requirement]]
 id = "P-03"
@@ -133,3 +133,63 @@ method = "A"
 acceptance = "Thresholds tuned on a training fleet, scored on an unseen fleet"
 tests = []
 evidence = "examples/fleet_analysis.py, docs/fleet/report.md: 0 false alarms in 24 engine-years"
+
+[[requirement]]
+id = "E-01"
+group = "Emissions"
+text = "NOx at most 50 mg/Nm³ dry at 15 % O2 above 70 % load on natural gas"
+source = "EU Medium Combustion Plant Directive (EU) 2015/2193, Annex II Part 2 Table 2, footnote 34"
+method = "A"
+acceptance = "DLE model calibrated to the published base-load NOx; compliant across the load range where the limit applies"
+tests = ["test_calibration_point_is_reproduced", "test_nox_follows_the_zeldovich_activation_temperature", "test_staging_extends_emissions_compliant_turndown"]
+evidence = "docs/environment.md: 20.5 mg/Nm³ at ISO base load; compliant down to 30 % load with staging"
+
+[[requirement]]
+id = "E-02"
+group = "Emissions"
+text = "Turbofan LTO NOx (Dp/Foo) below the CAEP/8 standard for its rated pressure ratio"
+source = "ICAO Annex 16 Volume II; 40 CFR 1031.60"
+method = "A"
+acceptance = "LTO cycle run on the off-design model; standard computed for the model's rated pressure ratio"
+tests = ["test_nox_standard_is_continuous_and_matches_tabulated_values", "test_lto_cycle"]
+evidence = "docs/environment.md: 31.9 g/kN against 63.4 g/kN (illustrative take-off emissions index)"
+
+[[requirement]]
+id = "P-05"
+group = "Performance model"
+text = "Base load set by the first limit reached (TIT, gas generator mechanical and corrected speed, exhaust temperature, generator capability); part load by output"
+source = "Engine control philosophy for a twin-shaft aeroderivative"
+method = "T"
+acceptance = "Each limit binds when it is the most restrictive; part-load control modes as designed"
+tests = ["test_twin_shaft_cold_day_is_corrected_speed_limited", "test_twin_shaft_hot_day_is_mechanical_speed_limited", "test_generator_and_exhaust_temperature_limits", "test_twin_shaft_part_load", "test_single_shaft_part_load_holds_exhaust_temperature_then_lowers_tit"]
+evidence = "tests/test_offdesign.py"
+
+[[requirement]]
+id = "P-06"
+group = "Performance model"
+text = "Model calibrated to multi-point test-bed data with parameter uncertainty and identifiability reported"
+source = "Model validation practice"
+method = "T"
+acceptance = "Hidden parameters recovered within uncertainty; held-out points predicted within combined uncertainty"
+tests = ["test_multipoint_fit_recovers_hidden_parameters", "test_held_out_points_are_predicted_within_uncertainty", "test_identifiability_shows_turbine_efficiencies_are_confounded"]
+evidence = "docs/calibration/multipoint.md"
+
+[[requirement]]
+id = "M-03"
+group = "Measurement"
+text = "Every pass-off instrument uncertainty traceable to a standard class, datasheet or valid calibration certificate"
+source = "ASME PTC 22 / ISO 2314 test practice"
+method = "I"
+acceptance = "Each channel names its source; out-of-date certificates invalidate the channel's correction"
+tests = ["test_every_instrument_has_a_source", "test_certificate_overrides_class_tolerance", "test_out_of_date_calibration_is_flagged"]
+evidence = "src/gtperf/data/instruments.toml, docs/passoff/report.md"
+
+[[requirement]]
+id = "F-03"
+group = "Fleet"
+text = "Cycling units monitored at part load as well as base load"
+source = "Operator dispatch: small industrial units rarely run at base load all the time"
+method = "T"
+acceptance = "Part-load deltas unbiased for a healthy engine; faults detected no later than with base-load-only monitoring"
+tests = ["test_part_load_fleet_monitoring", "test_split_health_and_part_load_gpa"]
+evidence = "docs/fleet/report.md, section 2"

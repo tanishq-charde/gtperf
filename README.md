@@ -2,7 +2,7 @@
 
 A Python toolkit for gas turbine performance: cycle modelling, site performance prediction, pass-off test validation and fleet trend analysis, for industrial and aero engines.
 
-**Status:** v1.1.0. All six phases done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics; tooling and reporting; two-spool turbofan, MATLAB port and certification note). Private.
+**Status:** v1.2.0. All six phases done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics; tooling and reporting; two-spool turbofan, MATLAB port and certification note), and v1.2 works through every limitation listed in v1.1 (see [What v1.2 adds](#what-v12-adds)). Private.
 
 ## What phase 1 does
 
@@ -54,6 +54,23 @@ A Python toolkit for gas turbine performance: cycle modelling, site performance 
 
 ![Turbofan trade](docs/figures/turbofan_trade.png)
 
+## What v1.2 adds
+
+v1.1 listed twelve limitations. Each one is now modelled, checked or measured, and what remains is stated in [Limitations](#limitations).
+
+- **Real component maps, guide vanes and bleed.** The public NPSS HBTF compressor and turbine maps (from NASA pyCycle, Apache 2.0, see [NOTICE](src/gtperf/data/maps/NOTICE)) replace the analytic map, read by R-line and scaled to the design point. VIGV angle shifts flow, head and efficiency on the map, and VIGV and handling-bleed schedules follow corrected speed. With the real map the gas generator slows on cold days, so a corrected-speed limit now joins the mechanical one.
+- **Split cooling.** NGV, rotor and power turbine cooling streams, with the power turbine air taken from an interstage port, so it costs less compressor work than delivery air.
+- **Losses that scale with flow.** Inlet and exhaust losses scale with dynamic head, W²T/P, from their design values.
+- **Part load and limits.** `power=` or `load=` sets any operating point. The twin shaft lowers TIT; the single shaft closes its VIGVs to hold exhaust temperature, then lowers TIT at the vane stop. Base load is the first limit reached among TIT, both gas generator speed limits, exhaust and PT inlet temperature, shaft power and a generator capability curve with ambient derate.
+- **Multi-point calibration.** [testbed.py](src/gtperf/testbed.py) fits model parameters to a whole test campaign by weighted least squares, with parameter covariance, condition number, chi-square and held-out prediction. It shows that the HP and power turbine efficiencies cannot be separated without the inter-turbine pressure (correlation −0.98, falling to −0.36 with P45). See [docs/calibration/multipoint.md](docs/calibration/multipoint.md).
+- **Humidity check.** The humidity effect is checked against GE's GER-3567H (a single shaft on exhaust temperature control loses power with humidity; an aeroderivative gains it as the gas generator speeds up) and against Yu, Lin and Yu (2025). See [docs/humidity_check.md](docs/humidity_check.md).
+- **Sourced pass-off uncertainties and estimated scatter.** Every instrument's uncertainty comes from its standard class or datasheet ([instruments.toml](src/gtperf/data/instruments.toml)) or from a calibration certificate, with due dates checked. Production scatter is estimated from the build data with confidence intervals instead of being assumed.
+- **Exhaust profile that moves.** The exhaust temperature field has burner-by-burner structure whose swirl rotates with load, so the rake profile uncertainty is a Monte Carlo over that model, and a weak burner is detected and tracked across load.
+- **Fault isolation.** HP and power turbine health are separate parameters, the GPA takes any measurement set (T45 and P45 added), and influence matrices can be built at part load. [docs/gpa_observability.md](docs/gpa_observability.md) measures which faults the measurements can tell apart and shows a second snapshot at part load is the most effective cure.
+- **Part-load fleet monitoring.** Cycling units follow a dispatch profile; part-load snapshots are compared with a baseline read at the measured output and analysed with a part-load influence matrix, with a power meter fingerprint for the setting. See section 2 of [docs/fleet/report.md](docs/fleet/report.md).
+- **Turbofan off-design and transients.** Fan, booster, HPC and turbine maps, working lines, thrust lapse with altitude and Mach number, thrust, N1, TET and fuel-flow settings, an idle to take-off acceleration with spool inertias, split cooling and a convergent-divergent nozzle option.
+- **Emissions and noise.** A DLE combustor model (Zeldovich NOx, CO burnout, air staging) calibrated to the SGT-400's published emissions, checked against the EU Medium Combustion Plant Directive across load; LTO-cycle NOx (Dp/Foo) for the turbofan against the CAEP/6 and CAEP/8 standards; and fan broadband (Heidmann) and jet mixing (Lighthill and von Glahn) source levels. See [docs/environment.md](docs/environment.md).
+
 ## Quick start
 
 ```bash
@@ -70,6 +87,11 @@ python examples/coverage_study.py 100         # does U95 really cover 95 %?
 python examples/fleet_analysis.py             # production SPC and fleet monitoring (a few minutes)
 gtperf turbofan examples/turbofan_cruise.toml # two-spool turbofan at cruise
 python examples/turbofan_study.py             # bypass ratio and fan pressure ratio trade
+python examples/turbofan_offdesign.py         # turbofan working lines, thrust lapse, acceleration
+python examples/multipoint_calibration.py     # test-bed calibration with uncertainty
+python examples/humidity_check.py             # humidity effect against published behaviour
+python examples/observability_study.py        # which faults the gas-path measurements can isolate
+python examples/environment_study.py          # NOx/CO across load, LTO NOx, noise sources
 make matlab                                   # MATLAB port, run in Octave against Python
 make requirements                             # regenerate the traceability table
 make check                                    # lint, tests and coverage
@@ -111,20 +133,20 @@ The classic simple-cycle trade-off: specific work (and so engine size for a give
 
 ### Calibration to the SGT-400 13 MW datasheet
 
-Datasheet values from the [Siemens Energy SGT-400 product page](https://siemens-energy.com/us/en/home/products-services/product/sgt-400.html) (simple cycle, 13 MW version, ISO). Compressor polytropic efficiency 0.89, 15 % cooling air, 4 % combustor loss and 98 % generator efficiency are assumptions.
+Datasheet values from the [Siemens Energy SGT-400 product page](https://siemens-energy.com/us/en/home/products-services/product/sgt-400.html) (simple cycle, 13 MW version, ISO). Compressor polytropic efficiency 0.89, cooling air split 7 % NGV, 5 % rotor and 3 % power turbine (from an interstage port), 4 % combustor loss and 98 % generator efficiency are assumptions.
 
 | Quantity | Datasheet | Model | Error |
 |---|---:|---:|---:|
 | Electrical power (MW) | 12.9 | 12.9 | fitted |
 | Heat rate (kJ/kWh) | 10,294 | 10,294 | fitted |
 | Exhaust flow (kg/s) | 40.0 | 40.0 | fitted |
-| Exhaust temperature (°C) | 555 | 550.2 | −4.8 K (not fitted) |
+| Exhaust temperature (°C) | 555 | 550.3 | −4.7 K (not fitted) |
 
-Fitted values: air flow 39.2 kg/s, TIT 1280 °C, turbine isentropic efficiency 0.858. These depend on the assumptions above, so they are model parameters, not claims about the real engine.
+Fitted values: air flow 39.2 kg/s, TIT 1280 °C, turbine isentropic efficiency 0.869. These depend on the assumptions above, so they are model parameters, not claims about the real engine.
 
 ![Correction curves](docs/figures/correction_curves.png)
 
-Output falls by about 0.9 % per kelvin above ISO, while heat rate and exhaust temperature rise. Below about −6 °C the gas generator reaches its speed limit (shaded), so TIT is cut back and the curves change slope.
+Output falls by about 0.9 % per kelvin above ISO, while heat rate and exhaust temperature rise. Below about −8 °C the gas generator reaches its corrected-speed limit (shaded), so TIT is cut back and the curves change slope. With the NPSS compressor map the gas generator slows on cold days at constant TIT, so it is the corrected speed, not the mechanical speed, that limits there.
 
 ![Site correction factors](docs/figures/site_factors.png)
 
@@ -132,7 +154,7 @@ The full sheet for this example site is in [docs/site_hot_desert.md](docs/site_h
 
 ### Pass-off test example
 
-[docs/passoff/report.md](docs/passoff/report.md) is the generated report for engine ESN-0412. It was tested on an 8 to 9 °C day with four injected sensor faults, and the raw log is alongside it. Validation catches all four faults, and the engine passes all three limits. Because the data is synthetic, the report ends by comparing the corrected results with the hidden truth: every result lands within its U95.
+[docs/passoff/report.md](docs/passoff/report.md) is the generated report for engine ESN-0412. It was tested on an 8 to 9 °C day with four injected sensor faults, and the raw log is alongside it. Validation catches all four faults, and the engine passes all three limits. Every uncertainty in the budget names its source (standard class, datasheet or calibration certificate, with due dates checked). Because the data is synthetic, the report ends by comparing the corrected results with the hidden truth: every result lands within its U95.
 
 ![Uncertainty budget](docs/passoff/figures/uncertainty_budget.png)
 
@@ -140,16 +162,16 @@ The full sheet for this example site is in [docs/site_hot_desert.md](docs/site_h
 
 `examples/coverage_study.py` repeats the test 100 times with fresh biases, noise, engine health and weather, and counts how often the truth falls inside the 95 % interval.
 
-The first version covered only 80 % for corrected power. The cause was the correction itself, not the instruments. The correction curves describe the nominal engine, but every production engine responds slightly differently to ambient conditions. The error was worst on cold days, when a slightly different engine hits the gas generator speed limit at a different temperature. Two fixes followed: a correction-model uncertainty term driven by production scatter, and a check that refuses tests run in a different control mode from the reference. With those in place:
+The first version covered only 80 % for corrected power. The cause was the correction itself, not the instruments. The correction curves describe the nominal engine, but every production engine responds slightly differently to ambient conditions. The error was worst on cold days, when a slightly different engine hits the gas generator speed limit at a different temperature. Two fixes followed: a correction-model uncertainty term driven by production scatter, and a check that refuses tests run in a different control mode from the reference. In v1.2 the instrument uncertainties come from standards, datasheets and certificates, the scatter is estimated from the production data, and the exhaust profile term comes from a Monte Carlo over a burner-pattern model. U95 for corrected power fell from ±0.048 MW to ±0.016 MW on the example test, and coverage still holds:
 
-| Result | Coverage of U95 (valid tests) | Std of normalised error |
+| Result | Coverage of U95 (100 valid tests) | Std of normalised error |
 |---|---:|---:|
-| Corrected power | 95.5 % | 0.92 |
-| Corrected heat rate | 98.9 % | 0.96 |
-| Corrected exhaust temperature | 94.4 % | 1.07 |
-| Corrected exhaust flow | 97.8 % | 0.99 |
+| Corrected power | 97 % | 0.84 |
+| Corrected heat rate | 93 % | 1.06 |
+| Corrected exhaust temperature | 96 % | 1.02 |
+| Corrected exhaust flow | 93 % | 1.12 |
 
-89 of the 100 tests were valid; 11 were flagged for running on the speed limit.
+With 100 tests the standard error of a 95 % coverage is about 2 points, so all four are consistent with 95 %. None of these 100 tests ran on a speed limit; a pooled run of about 300 tests during development gave 93 to 95 %.
 
 ### Fleet analytics results
 
@@ -183,7 +205,7 @@ The tests in `tests/` check:
 | Off-design solver reproduces the design point to 1e-8 (single and twin shaft) | Consistency |
 | Dry-air output scales exactly with ambient pressure; heat rate unchanged | Non-dimensional similarity |
 | Cold day switches to gas generator speed control and lowers TIT | Control logic |
-| Hot day: lower output and flow, higher heat rate and exhaust temperature, less surge margin | Physical behaviour |
+| Hot day: lower output and flow, higher heat rate and exhaust temperature | Physical behaviour |
 | Site correction factors multiply exactly to the site/ISO ratio | Consistency |
 | Calibration hits datasheet targets; exhaust temperature within 10 K | SGT-400 datasheet |
 | With perfect instruments, the correction returns the model reference values | Consistency |
@@ -207,21 +229,34 @@ The tests in `tests/` check:
 | ISA temperature and pressure at 0, 11 and 20 km | ISA tables |
 | MATLAB port matches the Python reference values to 1e-8 | Consistency |
 | Every test named in the requirements file exists, and the traceability table is current | Consistency |
+| Tabulated maps pass through the design point after scaling | Consistency |
+| Cold day hits the corrected-speed limit; hot day the mechanical speed limit | Control logic |
+| Generator capability and exhaust temperature limits bind when set | Control logic |
+| VIGVs close at low corrected speed along the schedule | Control schedule |
+| Twin-shaft part load lowers TIT; single shaft holds exhaust temperature with VIGVs, then lowers TIT | Control logic |
+| Inlet and exhaust losses scale with W²T/P | Fluid mechanics |
+| Humidity raises twin-shaft output and lowers single-shaft output on exhaust temperature control | GER-3567H |
+| Multi-point fit recovers hidden parameters; held-out points within uncertainty; turbine efficiencies flagged as confounded | Synthetic truth |
+| Every instrument has a source; class tolerances convert correctly; out-of-date certificates are flagged | Standards and datasheets |
+| Estimated build scatter contains the hidden truth | Synthetic truth |
+| Swirl rotates the burner cold spot by the modelled angle; a lean burner is detected and tracked | Exhaust model |
+| Split HP/PT health and part-load influence matrices; part-load fleet deltas are unbiased | Consistency |
+| Turbofan off-design reproduces the design point, lapses thrust with altitude and Mach, and accelerates to the steady point | Consistency, physical behaviour |
+| Split turbofan cooling conserves mass and energy; the CD nozzle beats the convergent one only when choked | Conservation, gas dynamics |
+| NOx follows the Zeldovich activation temperature; staging extends compliant turndown | Combustion chemistry |
+| NOx standard continuous and matches the tabulated values | 40 CFR 1031.60 |
+| Noise sources follow known turbofan trends (jet dominates at take-off, fan at approach) | Published behaviour |
 
 ## Limitations
 
-- The compressor map is generic and analytic, not the real machine's. Trends are right but numbers away from ISO are indicative only. No variable inlet guide vanes or bleed schedules yet, so surge margin falls further on hot days than a real engine would allow.
-- The calibration fits three datasheet numbers with three unknowns. A real calibration would use test-bed data across several operating points.
-- Cooling air is a single mixed stream ahead of the HP turbine, not a stage-by-stage model.
-- Inlet and exhaust losses are fixed at the quoted values rather than scaling with flow squared.
-- The twin-shaft humidity effect (about +5 % output from dry to saturated at 40 °C) comes from the gas generator speeding up with more water vapour in the gas. It has not been checked against OEM humidity curves.
-- Part load, generator capability limits and other derates are not modelled yet.
-- Pass-off instrument uncertainties and production scatter are representative assumptions. A real test would take them from calibration certificates and fleet build data.
-- The exhaust temperature profile in the synthetic data is a fixed pattern. Real profiles shift with load and combustor condition.
-- Compressor and turbine efficiency faults have nearly identical fingerprints with this measurement set, so isolating them leans heavily on T3.
-- Fleet monitoring uses base-load snapshots only; part-load data would need a load-dependent baseline.
-- The turbofan is a design-point model only: no component maps, off-design or transient behaviour, and a single cooling stream. Nozzles are convergent with a velocity-coefficient loss.
-- No NOx, CO or noise prediction. The certification note discusses those limits qualitatively and from the cycle trade.
+The v1.1 limitations are all addressed (see [What v1.2 adds](#what-v12-adds)). What is still true:
+
+- **No real engine data.** The NPSS maps are public research maps scaled to this engine, not the SGT-400's. The multi-point calibration, pass-off, fleet and fault-isolation studies run on synthetic data from a hidden "true" engine, so they demonstrate the methods, not this engine's numbers.
+- **Some inputs are calibrated or illustrative.** The DLE staging stop is set to give the published 30 % turndown, the turbofan NOx reference index is illustrative, the calibration certificates are made-up records, the ISO 6976 heating-value uncertainty comes from a worked example, and the exhaust swirl relation and the field T45 and P45 noise levels are assumptions.
+- **Noise is source levels only.** Fan broadband and jet mixing at 1 m, not certification EPNdB (no spectra, directivity, flight path, absorption or tone corrections), and fan tones are not modelled. The Heidmann constants were read from a scanned report.
+- **No aero CO model.** Turbofan emissions cover NOx and CO2 only.
+- **Linear, single-fault isolation.** The observability study scores one fault at a time; simultaneous faults rely on the weighted least-squares estimate and a prior.
+- **Part-load instrument check.** At part load the consistency check has one degree of freedom, so instrument faults are named from base-load points only.
 
 ## Roadmap
 
@@ -231,5 +266,6 @@ The tests in `tests/` check:
 4. Fleet analytics: SPC, gas-path analysis and fault detection (done)
 5. Tooling and reporting: Excel/VBA front end, CI, technical report and deck (done)
 6. Stretch: MATLAB port, two-spool aero cycle, requirements and certification note (done)
+7. v1.2: real maps, part load, multi-point calibration, sourced uncertainties, fault isolation, part-load fleet monitoring, turbofan off-design, emissions and noise (done)
 
 All data in this project is synthetic or from public sources.

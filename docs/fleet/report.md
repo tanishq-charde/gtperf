@@ -10,17 +10,17 @@ Synthetic data from the calibrated SGT-400-class model. Two problems: watching p
 - Build 80–85: Test-bed power metering error (+0.6 %)
 - Build 120 onwards: Supplier change: compressor efficiency -0.3 pts
 
-Phase I limits from builds 1–50 (outliers removed): centre 12.890 MW, sigma 0.112 MW. Individuals chart signals at builds [45, 91, 148, 156, 169, 180].
+Phase I limits from builds 1–50 (outliers removed): centre 12.878 MW, sigma 0.097 MW. Individuals chart signals at builds [45, 91, 148, 156, 169].
 
 | Chart | First signal after the supplier change (build 120) | Builds to detect |
 |---|---:|---:|
 | Individuals (Shewhart) | 148 | 28 |
 | EWMA | 127 | 7 |
-| CUSUM | 126 | 6 |
+| CUSUM | 127 | 7 |
 
-Gas-path analysis of the mean delta change across build 120 points to **compressor efficiency** (match 0.999; next turbine efficiency 0.982). Build 45 matches **turbine efficiency** (0.999).
+Gas-path analysis of the mean delta change across build 120 points to **compressor efficiency** (match 0.998; next turbine efficiency 0.957). Build 45 matches **turbine efficiency** (0.998).
 
-Process capability against the 12.4 MW acceptance limit: Cpk 1.51 before the change, 1.03 after.
+Process capability against the 12.4 MW acceptance limit: Cpk 1.72 before the change, 1.22 after.
 
 The +0.6 % power metering error on builds 80–85 is too small to see in power alone (about half a sigma). It shows up in heat rate instead, because the meter reads high while fuel flow is unaffected.
 
@@ -41,9 +41,9 @@ Snapshots with the gas generator on its speed limit (cold days) are excluded, be
 
 | Step threshold | Faults detected | Correctly isolated | False alarms per engine-year |
 |---:|---:|---:|---:|
-| 20.0 | 5.0 / 5.0 | 4.0 | 0.33 |
-| 25.0 | 4.0 / 5.0 | 3.0 | 0.04 |
-| 30.0 | 4.0 / 5.0 | 3.0 | 0.00 |
+| 20.0 | 5.0 / 5.0 | 4.0 | 0.38 |
+| 25.0 | 4.0 / 5.0 | 4.0 | 0.04 |
+| 30.0 | 4.0 / 5.0 | 4.0 | 0.00 |
 
 A threshold of 25 was chosen. It sits about 3e-4 into the chi-squared tail.
 
@@ -55,7 +55,7 @@ This fleet has different random seeds and different faults on different engines 
 |---:|---|---:|---|---|
 | 2 | HP turbine blade damage | 2 | turbine efficiency | yes |
 | 6 | HP turbine nozzle erosion | 6 | hp turbine flow capacity | yes |
-| 9 | Inlet filter failure, rapid fouling | 10 | compressor efficiency | yes |
+| 9 | Inlet filter failure, rapid fouling | 16 | compressor efficiency | yes |
 | 4 | Exhaust thermocouple drift | 92 | egt sensor | yes |
 | 11 | Fuel meter calibration error | 20 | fuel_flow sensor | yes |
 
@@ -68,15 +68,31 @@ A Hotelling T² outlier test on each engine's rolling-mean deltas against the fl
 | Detector | Faults detected | Can name the cause | False alarms per engine-year |
 |---|---:|---|---:|
 | Physics-based (step + consistency) | 5 / 5 | yes | 0.00 |
-| Naive T² outlier | 5 / 5 | no | 0.75 |
+| Naive T² outlier | 5 / 5 | no | 0.25 |
 
 The naive detector mostly flags engines that are simply dirtier or more worn than the fleet was early on. That is real but expected, so it produces nuisance alarms, and it cannot tell a sensor fault from an engine fault.
 
 ![Engine dashboards](figures/engine_trends.png)
 
+### Cycling units: monitoring at part load
+
+The same faults on engines that follow a dispatch profile: base load on 46 % of snapshots, otherwise 55–95 % load. Monitoring only base-load points throws the rest away. At part load the output is the operator's setting, so the baseline is read at the measured output, the power delta is zero by construction, and an influence matrix built at part load (power excluded) explains the other five deltas. A power meter error then appears as the engine running at a different output than the baseline assumes, and its fingerprint is the change in the other deltas per percent of output; the meter's own noise is carried into the step detector's covariance for the same reason. The two streams are monitored separately per engine and their alarms merged.
+
+| Engine | Fault | Base load only: detected after (days) | Base + part load | Isolated as (base + part) |
+|---:|---|---:|---:|---|
+| 2 | HP turbine blade damage | 2 | 2 | turbine efficiency |
+| 6 | HP turbine nozzle erosion | 24 | 6 | hp turbine flow capacity |
+| 9 | Inlet filter failure, rapid fouling | 28 | 26 | compressor efficiency |
+| 4 | Exhaust thermocouple drift | 56 | 56 | egt sensor |
+| 11 | Fuel meter calibration error | 48 | 48 | fuel_flow sensor |
+
+False alarms per engine-year: 0.04 base load only, 0.04 with part load.
+
+The instrument consistency check runs on base-load points only: at part load five free measurements and four health parameters leave one degree of freedom, enough to see an inconsistency but not to name the sensor.
+
 ## Limitations
 
-- The compressor and turbine efficiency fingerprints are very similar (cosine 0.98), so the two are easily confused. Separating them relies mostly on T3. Real programmes add measurements or use Kalman filtering with priors.
+- The compressor and lumped turbine efficiency fingerprints are similar, so a small fault in one is easily confused with the other. The split-turbine study in [gpa_observability.md](../gpa_observability.md) shows a second snapshot at part load is the most effective cure with the existing instruments.
 - Compressor flow capacity only shows in gas generator speed on this twin-shaft engine at temperature control, so fouling flow loss is weakly observable.
 - Gradual sensor drifts are invisible to the step detector by design (it follows trends), which is why the consistency monitor exists.
 - Everything is synthetic, and the field instrument noise levels are assumptions.

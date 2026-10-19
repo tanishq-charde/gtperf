@@ -15,4 +15,4 @@ __all__ = [
     "Turbine", "TwinShaftCycle", "TwinShaftEngine", "analyse", "correction_curves", "humid_air", "methane",
     "natural_gas", "site_performance",
 ]
-__version__ = "1.1.0"
+__version__ = "1.2.0"

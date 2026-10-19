@@ -10,10 +10,10 @@ Corrected to reference conditions (ISO 15 °C, 1013.25 mbar, 60 % RH, no inlet o
 
 | Result | Corrected | U95 | Limit | Margin | P(conform) | Verdict |
 |---|---:|---:|---:|---:|---:|---|
-| Corrected power (MW) | 12.717 | ±0.019 | >= 12.650 | 0.067 | 100.0 % | PASS |
-| Corrected heat rate (kJ/kWh) | 10,333 | ±27 | <= 10,500 | 167 | 100.0 % | PASS |
-| Corrected exhaust temperature (°C) | 552.5 | ±1.4 | <= 570.0 | 17.5 | 100.0 % | PASS |
-| Corrected exhaust flow (heat balance) (kg/s) | 39.49 | ±0.19 | – | – | – | for information |
+| Corrected power (MW) | 12.695 | ±0.016 | >= 12.650 | 0.045 | 100.0 % | PASS |
+| Corrected heat rate (kJ/kWh) | 10,340 | ±27 | <= 10,500 | 160 | 100.0 % | PASS |
+| Corrected exhaust temperature (°C) | 552.8 | ±1.4 | <= 570.0 | 17.2 | 100.0 % | PASS |
+| Corrected exhaust flow (heat balance) (kg/s) | 39.44 | ±0.18 | – | – | – | for information |
 
 ## 2. Test conditions
 
@@ -41,11 +41,11 @@ Stability (range of 1-minute averages within each point): all within limits.
 
 | Point | Measured power (MW) | Measured heat rate (kJ/kWh) | Power correction | Heat rate correction | Corrected power (MW) | Corrected heat rate (kJ/kWh) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1 | 13.340 | 10,231 | 0.9533 | 1.0099 | 12.717 | 10,333 |
-| 2 | 13.255 | 10,248 | 0.9592 | 1.0083 | 12.715 | 10,332 |
-| 3 | 13.190 | 10,263 | 0.9643 | 1.0069 | 12.719 | 10,333 |
+| 1 | 13.272 | 10,250 | 0.9566 | 1.0088 | 12.695 | 10,340 |
+| 2 | 13.191 | 10,266 | 0.9623 | 1.0072 | 12.694 | 10,339 |
+| 3 | 13.129 | 10,280 | 0.9672 | 1.0059 | 12.698 | 10,340 |
 
-Point-to-point repeatability of corrected power: 0.03 % (max − min). This engine produced -1.42 % power against the nominal model at test conditions.
+Point-to-point repeatability of corrected power: 0.03 % (max − min). This engine produced -1.50 % power against the nominal model at test conditions.
 
 ## 5. Uncertainty
 
@@ -53,10 +53,10 @@ Systematic (calibration) uncertainties are shared by all points; random uncertai
 
 | Result | GUM u | Monte Carlo u | MC 95 % interval |
 |---|---:|---:|---|
-| Corrected power (MW) | 0.009662 | 0.009591 | 12.698 to 12.736 |
-| Corrected heat rate (kJ/kWh) | 13.65 | 13.58 | 10,307 to 10,360 |
-| Corrected exhaust temperature (°C) | 0.6974 | 0.7052 | 551.1 to 553.9 |
-| Corrected exhaust flow (heat balance) (kg/s) | 0.09278 | 0.0921 | 39.31 to 39.67 |
+| Corrected power (MW) | 0.007925 | 0.007858 | 12.680 to 12.711 |
+| Corrected heat rate (kJ/kWh) | 13.5 | 13.43 | 10,314 to 10,366 |
+| Corrected exhaust temperature (°C) | 0.6959 | 0.7028 | 551.4 to 554.2 |
+| Corrected exhaust flow (heat balance) (kg/s) | 0.0919 | 0.0911 | 39.26 to 39.62 |
 
 Largest contributors:
 
@@ -94,7 +94,7 @@ Each calibration uncertainty comes from the instrument's accuracy class or speci
 | P_elec | Voltage transformers (ratio and phase) | calibration certificate | TB2-VT-2511-02: as-found +0.02, U = 0.05 (k = 2). Overrides IEC 61869-3 (limits as in IEC 60044-2) class 0.2, ±(0.2 % + tan φ · 10′) at 80-120 % Un, pf 0.9 → ±0.341 % | normal (certificate) | 0.025 % | [link](https://www.kth.se/social/files/55f12ed5f2765409c53d3c14/2%20Instrument%20transformers.pdf) |
 | P_elec | Active energy meter | calibration certificate | TB2-MTR-2603-03: as-found +0.04, U = 0.08 (k = 2). Overrides IEC 62053-22 class 0.2S, ±0.2 % (pf 1), ±0.3 % (pf 0.5 ind.) for 0.05-0.1 In ≤ I ≤ Imax; ±0.3 % used at pf 0.9 | normal (certificate) | 0.04 % | [link](https://assets.elexon.co.uk/wp-content/uploads/sites/11/2012/02/28171745/redlining_for_cp1319_cop4_v0.1.pdf) |
 | T_exh_01 … T_exh_12 (12) | Thermocouple tolerance | IEC 60584-1 type K class 1 | ±1.5 °C (-40 to 375 °C) or ±0.004·\|t\| (375 to 1000 °C) | rectangular | 1.27 degC | [link](https://tcdirect.co.uk/thermocouple-sensors/thermocouple-accuracies.aspx) |
-| N_gg | Tachometer accuracy | Bently Nevada 3500/50M specification 10,000-99,999 rpm | ±0.01 % of true shaft speed | rectangular | 0.00581 % | [link](https://core.instrumart.com/assets/3500-50M-Datasheet.pdf) |
+| N_gg | Tachometer accuracy | Bently Nevada 3500/50M specification 10,000-99,999 rpm | ±0.01 % of true shaft speed | rectangular | 0.00574 % | [link](https://core.instrumart.com/assets/3500-50M-Datasheet.pdf) |
 | P3 | Pressure transmitter reference accuracy | Rosemount 3051S specification Classic performance class | ±0.035 % of calibrated span (span 25 bar) | rectangular | 0.00505 bar | [link](https://emerson.com:443/documents/automation/product-data-sheet-rosemount-3051s-series-of-instrumentation-en-73154.pdf) |
 | T3 | Thermocouple tolerance | IEC 60584-1 type K class 1 | ±1.5 °C (-40 to 375 °C) or ±0.004·\|t\| (375 to 1000 °C) | rectangular | 0.974 degC | [link](https://tcdirect.co.uk/thermocouple-sensors/thermocouple-accuracies.aspx) |
 
@@ -117,15 +117,15 @@ Certificate corrections applied to the readings: T_amb_1 +0.030 degC, T_amb_2 -0
 
 ### Correction-model scatter
 
-Build-to-build health scatter used for the correction-model terms: estimated from 200 production pass-off tests (point estimates). Compressor flow 0.24 %, compressor efficiency 0.15 pts, turbine efficiency 0.13 pts, turbine capacity 0.30 % (one standard deviation).
+Build-to-build health scatter used for the correction-model terms: estimated from 200 production pass-off tests (point estimates). Compressor flow 0.27 %, compressor efficiency 0.15 pts, turbine efficiency 0.12 pts, turbine capacity 0.30 % (one standard deviation).
 
 | Parameter | Estimate | 95 % interval | Hidden truth (synthetic) |
 |---|---:|---|---:|
-| Compressor flow capacity (%) | 0.243 | 0.159 to 0.308 | 0.300 |
-| Compressor efficiency (pts) | 0.149 | 0.123 to 0.172 | 0.150 |
-| Turbine efficiency (pts) | 0.125 | 0.106 to 0.141 | 0.120 |
-| HP turbine flow capacity (%) | 0.298 | 0.239 to 0.346 | 0.300 |
-| Corrected power (MW) | 0.108 | 0.099 to 0.120 | 0.108 |
+| Compressor flow capacity (%) | 0.268 | 0.231 to 0.300 | 0.300 |
+| Compressor efficiency (pts) | 0.152 | 0.127 to 0.176 | 0.150 |
+| Turbine efficiency (pts) | 0.124 | 0.104 to 0.142 | 0.120 |
+| HP turbine flow capacity (%) | 0.297 | 0.242 to 0.339 | 0.300 |
+| Corrected power (MW) | 0.094 | 0.086 to 0.104 | 0.093 |
 
 ## 6. Check against the known truth (synthetic test only)
 
@@ -133,10 +133,10 @@ The data was generated from an engine with hidden health deltas and hidden instr
 
 | Result | True | Corrected | Error | Error / U95 |
 |---|---:|---:|---:|---:|
-| Corrected power (MW) | 12.700 | 12.717 | +0.017 | +0.87 |
-| Corrected heat rate (kJ/kWh) | 10,352 | 10,333 | -19 | -0.71 |
-| Corrected exhaust temperature (°C) | 551.9 | 552.5 | +0.6 | +0.42 |
-| Corrected exhaust flow (heat balance) (kg/s) | 39.60 | 39.49 | -0.11 | -0.57 |
+| Corrected power (MW) | 12.684 | 12.695 | +0.012 | +0.75 |
+| Corrected heat rate (kJ/kWh) | 10,358 | 10,340 | -19 | -0.69 |
+| Corrected exhaust temperature (°C) | 552.2 | 552.8 | +0.6 | +0.45 |
+| Corrected exhaust flow (heat balance) (kg/s) | 39.56 | 39.44 | -0.12 | -0.65 |
 
 ## Method notes
 
