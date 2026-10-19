@@ -219,3 +219,14 @@ def test_correction_curves_are_monotonic(single):
     cc = correction_curves(single, [-10, 0, 10, 20, 30, 40])
     assert cc["power"] == sorted(cc["power"], reverse=True)
     assert cc["heat_rate"] == sorted(cc["heat_rate"])
+
+
+def test_humidity_effect_follows_the_control_mode(twin, single):
+    """GER-3567H: on exhaust temperature control output falls with humidity; on gas generator temperature
+    control (aeroderivative, twin shaft) it rises because the gas generator speeds up."""
+    dry, wet = Ambient(t=303.15, rh=0.0), Ambient(t=303.15, rh=1.0)
+    t5 = SingleShaftEngine(single.cycle, 39.0, limits=Limits(exhaust_temp=single.design.exhaust.t))
+    assert t5.run(wet).electrical_power < t5.run(dry).electrical_power
+    a, b = twin.run(dry), twin.run(wet)
+    assert b.electrical_power > a.electrical_power
+    assert b.info["mechanical_speed"] > a.info["mechanical_speed"]
