@@ -3,13 +3,22 @@
 Two datasets, matching the two places performance engineers watch engines:
 
 * a production sequence: one corrected pass-off result per engine built, for SPC;
-* an in-service fleet: base-load snapshots from engines on site over two years,
-  with compressor fouling, offline washes, gradual wear, and injected engine and
-  instrument faults.
+* an in-service fleet: snapshots from engines on site over two years, with
+  compressor fouling, offline washes, gradual wear, and injected engine and
+  instrument faults. Engines run at base load, or follow a dispatch profile with
+  part-load days (`dispatch="cycling"`).
 
 The monitoring pipeline compares each snapshot with the nominal model at the same
 ambient conditions (a baseline lookup), detects abrupt changes against each
 engine's own trend, and uses gas-path analysis to say what changed.
+
+At part load the output is the operator's setting, not a free measurement, so the
+baseline is looked up at the measured output and ambient, the power delta is zero
+by construction, and a separate influence matrix built at part load (with power
+excluded) explains the other five deltas. A power meter error then shows up as the
+engine running at a different output than the baseline assumes, and its
+fingerprint is the change in the other deltas per percent of output. Base-load and
+part-load snapshots are monitored as two streams per engine and their alarms merged.
 """
 
 from __future__ import annotations
@@ -118,9 +127,22 @@ def _ambient_series(rng, days):
     return t, p, rh
 
 
-def in_service_fleet(engine, n_engines=12, days=730, interval=2, faults=None, seed=11):
-    """Base-load snapshots for a fleet. Returns (data, maintenance log, fault list)."""
+def dispatch_profile(rng, n, base_fraction=0.45, low=0.55):
+    """Load setting per snapshot for a cycling unit: base load on `base_fraction` of snapshots (None), otherwise
+    a part-load fraction of base load drawn between `low` and 0.95."""
+    loads = rng.uniform(low, 0.95, n)
+    return [None if b else float(v) for b, v in zip(rng.random(n) < base_fraction, loads, strict=True)]
+
+
+def in_service_fleet(engine, n_engines=12, days=730, interval=2, faults=None, seed=11, dispatch=None):
+    """Snapshots for a fleet. Returns (data, maintenance log, fault list).
+
+    `dispatch` is None (always base load), "cycling" (see `dispatch_profile`) or a function (rng, n) -> list of
+    load fractions (None for base load). The data then carry a `base_load` flag, as a control system reports it.
+    """
     rng = np.random.default_rng(seed)
+    if dispatch == "cycling":
+        dispatch = dispatch_profile
     faults = default_fleet_faults() if faults is None else faults
     snap = np.arange(0, days, interval)
     rows, washes = [], []
@@ -132,6 +154,7 @@ def in_service_fleet(engine, n_engines=12, days=730, interval=2, faults=None, se
         wash_days = [w for w in wash_days if w < days]
         washes += [{"engine": e, "day": int(w)} for w in wash_days]
         t_amb, p_amb, rh = _ambient_series(rng, snap)
+        loads = dispatch(rng, len(snap)) if dispatch else [None] * len(snap)
         guess = None
         for k, d in enumerate(snap):
             last_wash = max([0] + [w for w in wash_days if w <= d])
@@ -152,7 +175,7 @@ def in_service_fleet(engine, n_engines=12, days=730, interval=2, faults=None, se
                 else:
                     sensor_bias[MEASUREMENTS.index(f.target.split(":")[1])] += f.magnitude * frac
             amb = Ambient(t_amb[k] + 273.15, p_amb[k] * 100, rh[k])
-            r = engine.run(amb, health=health_from_vector(x), guess=guess)
+            r = engine.run(amb, health=health_from_vector(x), guess=guess, load=loads[k])
             guess = r.info["solution"]
             z = measurement_vector(r)
             noise = rng.normal(0, FIELD_NOISE)
@@ -163,6 +186,7 @@ def in_service_fleet(engine, n_engines=12, days=730, interval=2, faults=None, se
             rows.append({
                 "engine": e, "day": int(d), "t_amb": t_amb[k] + rng.normal(0, 0.3), "p_amb": p_amb[k],
                 "rh": rh[k], **{m: z_meas[i] for i, m in enumerate(MEASUREMENTS)},
+                **({"base_load": loads[k] is None} if dispatch else {}),
                 **{f"true_{h}": x[j] for j, h in enumerate(HEALTH)},
             })
     return pd.DataFrame(rows), pd.DataFrame(washes), faults
@@ -175,19 +199,45 @@ class BaselineModel:
 
     Ambient pressure enters through non-dimensional scaling: power, fuel flow and
     P3 scale with it, temperatures and speeds do not.
+
+    With `loads` (fractions of base load) it also holds a part-load grid, looked
+    up at the measured output by `expected_part_load`.
     """
 
-    def __init__(self, engine, t_range=(-15, 40), rh_grid=(0.3, 0.6, 0.95)):
+    def __init__(self, engine, t_range=(-15, 40), rh_grid=(0.3, 0.6, 0.95), loads=None):
         self.t = np.arange(t_range[0], t_range[1] + 1, 1.0)
         self.rh = np.array(rh_grid)
-        grid = np.empty((len(self.t), len(self.rh), len(MEASUREMENTS)))
+        self.loads = None if loads is None else np.unique(np.append(np.asarray(loads, float), 1.0))
+        n_load = 1 if self.loads is None else len(self.loads)
+        grid = np.empty((len(self.t), len(self.rh), n_load, len(MEASUREMENTS)))
         for j, rh in enumerate(self.rh):
             guess = None
             for i, t in enumerate(self.t):
-                r = engine.run(Ambient(t + 273.15, ISO.p, rh), guess=guess)
+                amb = Ambient(t + 273.15, ISO.p, rh)
+                r = engine.run(amb, guess=guess)
                 guess = r.info["solution"]
-                grid[i, j] = measurement_vector(r)
-        self.interp = RegularGridInterpolator((self.t, self.rh), grid)
+                grid[i, j, -1] = measurement_vector(r)
+                g = guess
+                for k, load in enumerate(self.loads[:-1] if self.loads is not None else []):
+                    rp = engine.run(amb, guess=g, power=load * r.electrical_power)
+                    g = rp.info["solution"]
+                    grid[i, j, k] = measurement_vector(rp)
+        self.interp = RegularGridInterpolator((self.t, self.rh), grid[:, :, -1])
+        if self.loads is not None:
+            self.interp_part = RegularGridInterpolator((self.t, self.rh, self.loads), grid)
+
+    def expected_part_load(self, t_amb, p_amb_mbar, rh, power):
+        """Nominal measurements at the measured output (W): the load fraction is the output over the nominal
+        base-load output at the same ambient."""
+        t = np.clip(t_amb, self.t[0], self.t[-1])
+        h = np.clip(rh, self.rh[0], self.rh[-1])
+        delta = np.asarray(p_amb_mbar) * 100 / ISO.p
+        base = self.interp(np.column_stack([t, h]))[:, 0] * delta
+        frac = np.clip(np.asarray(power) / base, self.loads[0], 1.0)
+        z = self.interp_part(np.column_stack([t, h, frac]))
+        for k in (0, 1, 3):
+            z[:, k] *= delta
+        return z
 
     def expected(self, t_amb, p_amb_mbar, rh):
         pts = np.column_stack([np.clip(t_amb, self.t[0], self.t[-1]), np.clip(rh, self.rh[0], self.rh[-1])])
@@ -199,7 +249,11 @@ class BaselineModel:
 
 
 def fleet_deltas(data, baseline):
-    expected = baseline.expected(data["t_amb"].to_numpy(), data["p_amb"].to_numpy(), data["rh"].to_numpy())
+    args = (data["t_amb"].to_numpy(), data["p_amb"].to_numpy(), data["rh"].to_numpy())
+    expected = baseline.expected(*args)
+    part = ~data["base_load"].to_numpy(bool) if "base_load" in data else np.zeros(len(data), bool)
+    if part.any():
+        expected[part] = baseline.expected_part_load(*(a[part] for a in args), data["power"].to_numpy()[part])
     dz = deltas(data[MEASUREMENTS].to_numpy(), expected)
     return pd.DataFrame(dz, columns=[f"d_{m}" for m in MEASUREMENTS], index=data.index)
 
@@ -336,30 +390,62 @@ class MonitoringResult:
     excluded: pd.Series  # snapshots left out (gas generator on its speed limit)
 
 
+PART_LOAD_GRID = (0.5, 0.6, 0.7, 0.8, 0.9)
+
+
 def monitor_fleet(engine, data, washes, baseline=None, gpa=None, step_threshold=25.0, sensor_threshold=20.0,
-                  u_t_amb=0.3, speed_band=0.003):
+                  u_t_amb=0.3, speed_band=0.003, part_load=True):
     """Full in-service pipeline: baseline deltas, step detection, instrument consistency, fault isolation.
 
     Snapshots where the gas generator is on its speed limit are excluded: the
     nominal baseline is temperature-controlled there, so deltas would mix control
     mode with health. When the consistency monitor fires on the same engine as a
     step alarm (within 60 days), the instrument diagnosis wins.
+
+    For a cycling fleet (data with a `base_load` flag) part-load snapshots form a
+    second stream with their own baseline lookup and influence matrix; with
+    `part_load=False` they are discarded, which is what base-load-only monitoring
+    does.
     """
-    baseline = baseline or BaselineModel(engine)
+    part = ~data["base_load"].to_numpy(bool) if "base_load" in data else np.zeros(len(data), bool)
+    if part.any() and not part_load:
+        data, part = data[~part], np.zeros((~part).sum(), bool)  # base-load-only monitoring of a cycling fleet
+    if baseline is None:
+        baseline = BaselineModel(engine, loads=PART_LOAD_GRID if part.any() else None)
     gpa = gpa or make_gpa(engine)
     if hasattr(engine, "speed_limited"):
         excluded = engine.speed_limited(data["n_gg"].to_numpy(), data["t_amb"].to_numpy() + 273.15, speed_band)
+        excluded &= ~part
     else:
         excluded = np.zeros(len(data), bool)
     d = data[~excluded]
     dz = fleet_deltas(d, baseline)
     cov = ambient_noise_covariance(baseline, u_t_amb)
-    steps = detect_changes(d, dz, washes, gpa, threshold=step_threshold, extra_cov=cov)
-    sensors, chi = consistency_monitor(d, dz, gpa, threshold=sensor_threshold, extra_cov=cov, engine=engine)
-    for a in steps:
-        a.source = "step"
-    for a in sensors:
-        a.source = "instrument"
+    on_part = part[~excluded]
+    streams = [("", d[~on_part], gpa, cov)]
+    if on_part.any():
+        g = make_part_load_gpa(engine)
+        meter = g.sensor_signatures["power"]
+        # the baseline is read at the measured output, so power meter noise moves the other deltas together
+        streams.append((" (part load)", d[on_part], g, cov + np.outer(meter, meter) * FIELD_NOISE[0] ** 2))
+    steps, sensors, chi = [], [], pd.Series(np.nan, index=dz.index)
+    for tag, ds, g, c in streams:
+        st = detect_changes(ds, dz.loc[ds.index], washes, g, threshold=step_threshold, extra_cov=c)
+        for a in st:
+            a.source = "step" + tag
+        steps += st
+        if tag:
+            # five free measurements and four health parameters leave one degree of freedom: enough to see an
+            # inconsistency but not to say which sensor, so the instrument check runs on base-load data only
+            continue
+        se, chi_base = consistency_monitor(ds, dz.loc[ds.index], g, threshold=sensor_threshold, extra_cov=c,
+                                           engine=engine)
+        for a in se:
+            a.source = "instrument"
+        sensors += se
+        chi.loc[chi_base.index] = chi_base
+    steps = _first_per_episode(steps)
+    sensors = _first_per_episode(sensors)
     combined = list(sensors)
     for a in steps:
         near = [s for s in sensors if s.engine == a.engine and abs(s.day - a.day) <= 60]
@@ -367,6 +453,16 @@ def monitor_fleet(engine, data, washes, baseline=None, gpa=None, step_threshold=
             combined.append(a)
     combined.sort(key=lambda a: (a.engine, a.day))
     return MonitoringResult(combined, steps, sensors, chi, dz, excluded)
+
+
+def _first_per_episode(alarms, gap=60):
+    """Merge alarms from separate streams: keep the earliest of any on one engine within `gap` days."""
+    out = []
+    for a in sorted(alarms, key=lambda a: (a.engine, a.day)):
+        if out and out[-1].engine == a.engine and a.day - out[-1].day <= gap:
+            continue
+        out.append(a)
+    return out
 
 
 def naive_fleet_outliers(data, dz, baseline_days=90, threshold=30.0, recent=8):
@@ -427,3 +523,20 @@ def make_gpa(engine, noise=FIELD_NOISE):
     from .gpa import influence_matrix
 
     return GasPathAnalysis(influence_matrix(engine), noise)
+
+
+def make_part_load_gpa(engine, load=0.75, noise=FIELD_NOISE, ambient=ISO):
+    """GPA for part-load snapshots: influence matrix at a fixed output, the power row excluded (output is the
+    setting), and a power meter fingerprint equal to the change in the other deltas per percent of output."""
+    from .gpa import influence_matrix
+
+    power = load * engine.run(ambient).electrical_power
+    H = influence_matrix(engine, ambient, power=power)
+    z0 = measurement_vector(engine.run(ambient, power=power))
+    up = deltas(measurement_vector(engine.run(ambient, power=power * 1.005)), z0)
+    dn = deltas(measurement_vector(engine.run(ambient, power=power * 0.995)), z0)
+    meter = (up - dn) / 1.0  # per % of output the engine really runs above what the meter says
+    meter[0] = 0.0
+    noise = np.array(noise, float)
+    noise[0] = 1e3  # no information in the power delta
+    return GasPathAnalysis(H, noise, sensor_signatures={"power": meter})

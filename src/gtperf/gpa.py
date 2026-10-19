@@ -136,13 +136,17 @@ class GPAResult:
 
 
 class GasPathAnalysis:
-    def __init__(self, H, noise_std, prior_std=None, measurements=MEASUREMENTS, health=HEALTH):
-        """noise_std: measurement delta noise (same units as deltas). prior_std: optional health prior (ridge)."""
+    def __init__(self, H, noise_std, prior_std=None, measurements=MEASUREMENTS, health=HEALTH,
+                 sensor_signatures=None):
+        """noise_std: measurement delta noise (same units as deltas). prior_std: optional health prior (ridge).
+        sensor_signatures: optional {measurement: delta vector} replacing the unit fingerprint of a sensor bias,
+        for a sensor that sets the operating point (the power meter at part load) rather than reading it."""
         self.H = np.asarray(H)
         self.noise = np.asarray(noise_std, dtype=float)
         self.prior = None if prior_std is None else np.asarray(prior_std, dtype=float)
         self.measurements = list(measurements)
         self.health = list(health)
+        self.sensor_signatures = dict(sensor_signatures or {})
 
     def _solve(self, dz, mask):
         H = self.H[mask]
@@ -179,6 +183,9 @@ class GasPathAnalysis:
         """Unit-norm measurement signature of each single fault, in noise-normalised space."""
         sig = {h: self.H[:, j] / self.noise for j, h in enumerate(self.health)}
         for k, m in enumerate(self.measurements):
+            if m in self.sensor_signatures:
+                sig[f"sensor:{m}"] = np.asarray(self.sensor_signatures[m], float) / self.noise
+                continue
             e = np.zeros(len(self.noise))
             e[k] = 1 / self.noise[k]
             sig[f"sensor:{m}"] = e

@@ -176,3 +176,18 @@ def test_split_health_and_part_load_gpa():
     power = 0.6 * engine.run().electrical_power
     Hp = influence_matrix(engine, health=SPLIT_HEALTH, power=power)
     assert np.allclose(Hp[0], 0, atol=1e-6)  # output is the setting at part load
+
+
+def test_part_load_fleet_monitoring():
+    from gtperf.fleet import BaselineModel, in_service_fleet, make_part_load_gpa, monitor_fleet
+
+    _, _, engine = engine_from_datasheet(DATASHEET)
+    data, washes, _ = in_service_fleet(engine, n_engines=2, days=120, faults=[], dispatch="cycling")
+    assert data["base_load"].any() and (~data["base_load"]).any()
+    baseline = BaselineModel(engine, t_range=(-5, 35), loads=(0.5, 0.7, 0.9))
+    m = monitor_fleet(engine, data, washes, baseline=baseline)
+    part = ~data.loc[m.dz.index, "base_load"].to_numpy(bool)
+    assert np.allclose(m.dz["d_power"].to_numpy()[part], 0, atol=1e-9)  # output is the setting
+    assert np.abs(m.dz.to_numpy()[part][:, 1:].mean(axis=0)).max() < 1.0  # healthy engine, unbiased baseline
+    g = make_part_load_gpa(engine)
+    assert g.classify(g.sensor_signatures["power"] * 0.8)[0][0] == "sensor:power"

@@ -162,7 +162,17 @@ def engine_figure(data, mon, washes, faults, engine_ids, path, gpa):
     plt.close(fig)
 
 
-def write_report(prod, train, test, naive):
+def cycling_study(engine, seed=23):
+    """The test fleet's faults on cycling units: base-load-only monitoring against base plus part load."""
+    data, washes, faults = in_service_fleet(engine, faults=TEST_FAULTS, seed=seed, dispatch="cycling")
+    out = {"base_share": float(data["base_load"].mean())}
+    for name, part in (("base", False), ("both", True)):
+        m = monitor_fleet(engine, data, washes, part_load=part)
+        out[name] = score(m.alarms, faults, 12, 730)
+    return out
+
+
+def write_report(prod, train, test, naive, cycling):
     L = ["# Fleet performance monitoring", "",
          "Synthetic data from the calibrated SGT-400-class model. Two problems: watching production pass-off results "
          "build by build, and watching engines in service for faults.", ""]
@@ -229,11 +239,33 @@ def write_report(prod, train, test, naive):
           "The naive detector mostly flags engines that are simply dirtier or more worn than the fleet was early "
           "on. That is real but expected, so it produces nuisance alarms, and it cannot tell a sensor fault from an "
           "engine fault.", "",
-          "![Engine dashboards](figures/engine_trends.png)", "",
+          "![Engine dashboards](figures/engine_trends.png)", ""]
+    sb, sp = cycling["base"][0], cycling["both"][0]
+    L += ["### Cycling units: monitoring at part load", "",
+          f"The same faults on engines that follow a dispatch profile: base load on "
+          f"{100 * cycling['base_share']:.0f} % "
+          "of snapshots, otherwise 55–95 % load. Monitoring only base-load points throws the rest away. At part "
+          "load the output is the operator's setting, so the baseline is read at the measured output, the power "
+          "delta is zero by construction, and an influence matrix built at part load (power excluded) explains the "
+          "other five deltas. A power meter error then appears as the engine running at a different output than "
+          "the baseline assumes, and its fingerprint is the change in the other deltas per percent of output; the "
+          "meter's own noise is carried into the step detector's covariance for the same reason. The two streams "
+          "are monitored separately per engine and their alarms merged.", "",
+          "| Engine | Fault | Base load only: detected after (days) | Base + part load | Isolated as (base + part) |",
+          "|---:|---|---:|---:|---|"]
+    for (_, a), (_, b) in zip(sb.iterrows(), sp.iterrows(), strict=True):
+        da = f"{int(a.delay_days)}" if pd.notna(a.delay_days) else "not detected"
+        db = f"{int(b.delay_days)}" if pd.notna(b.delay_days) else "not detected"
+        L.append(f"| {a.engine} | {a.fault} | {da} | {db} | {label(b.isolated_as)} |")
+    L += ["", f"False alarms per engine-year: {cycling['base'][2]:.2f} base load only, {cycling['both'][2]:.2f} with "
+          "part load.", "",
+          "The instrument consistency check runs on base-load points only: at part load five free measurements and "
+          "four health parameters leave one degree of freedom, enough to see an inconsistency but not to name the "
+          "sensor.", "",
           "## Limitations", "",
-          "- The compressor and turbine efficiency fingerprints are very similar (cosine 0.98), so the two are "
-          "easily confused. Separating them relies mostly on T3. Real programmes add measurements or use Kalman "
-          "filtering with priors.",
+          "- The compressor and lumped turbine efficiency fingerprints are similar, so a small fault in one is "
+          "easily confused with the other. The split-turbine study in [gpa_observability.md](../gpa_observability.md) "
+          "shows a second snapshot at part load is the most effective cure with the existing instruments.",
           "- Compressor flow capacity only shows in gas generator speed on this twin-shaft engine at "
           "temperature control, so fouling flow loss is weakly observable.",
           "- Gradual sensor drifts are invisible to the step detector by design (it follows trends), which is "
@@ -260,6 +292,8 @@ if __name__ == "__main__":
     nv = naive_fleet_outliers(d, m.dz)
     naive = score(nv, faults, 12, 730)
     engine_figure(data, m, washes, faults, [2, 9, 4], FIG / "engine_trends.png", gpa)
-    write_report(prod, train, test, naive)
+    cycling = cycling_study(engine)
+    print("cycling fleet\n", cycling["base"][0], "\n", cycling["both"][0])
+    write_report(prod, train, test, naive, cycling)
     print("test fleet\n", test[4][25][1])
     print("wrote docs/fleet/report.md")
