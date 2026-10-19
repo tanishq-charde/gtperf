@@ -3,6 +3,7 @@ import pytest
 from test_cli_and_study import DATASHEET
 
 from gtperf.cli import engine_from_datasheet
+from gtperf.exhaust import ExhaustField, ExhaustProfileModel
 from gtperf.maps import Health
 from gtperf.passoff import RESULTS, Guarantee, PassOffAnalysis, analyse, average, validate
 from gtperf.report import write_report
@@ -49,7 +50,8 @@ def test_perfect_instruments_recover_truth_exactly(engine):
     """With no bias, negligible noise and a nominal engine, correction must return the model's reference values."""
     # a whisper of noise so constant channels are not mistaken for stuck sensors
     inst = {k: type(v)(v.unit, 0.0, 1e-9 if v.relative else 1e-6, v.relative) for k, v in default_instruments().items()}
-    test = generate_test(engine, POINTS, instruments=inst, seed=1, duration_s=120)
+    flat = ExhaustField(ExhaustProfileModel(), np.zeros(6), 0.0, 0.0, 0.0, 0.0)  # uniform exhaust plane
+    test = generate_test(engine, POINTS, instruments=inst, seed=1, duration_s=120, exhaust=flat)
     rep = validate(test.data)
     pts = average(rep)
     value, _ = PassOffAnalysis(engine).correct([p.values for p in pts])

@@ -23,6 +23,7 @@ where = ["src"]
 
 
 [tool.setuptools.package-data]
+"gtperf.data" = ["*.toml"]
 "gtperf.data.maps" = ["*.json", "NOTICE"]
 
 [tool.pytest.ini_options]
