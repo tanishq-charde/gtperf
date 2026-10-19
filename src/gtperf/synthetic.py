@@ -9,50 +9,32 @@ injected fault, so the analysis chain can be checked against a known truth.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 import numpy as np
 import pandas as pd
 
 from .cycle import Ambient
+from .exhaust import ExhaustProfileModel
+from .instruments import Instrument, load_instruments
 from .maps import NEW_AND_CLEAN
+
+__all__ = ["DEFAULT_TEST_DATE", "Fault", "Instrument", "SyntheticTest", "TestPoint", "default_instruments",
+           "generate_test"]
 
 N_EXHAUST_TC = 12
 N_AMBIENT_T = 3
+DEFAULT_TEST_DATE = date(2026, 10, 12)
 
 
-@dataclass(frozen=True)
-class Instrument:
-    """Standard uncertainties (k=1). `bias` is the systematic (calibration) part, `noise` the random part.
+def default_instruments(path=None):
+    """The test-bed instrument list, with uncertainties from standards, specifications and certificates.
 
-    Relative instruments express both as fractions of reading.
+    Read from ``gtperf/data/instruments.toml`` unless `path` is given. See
+    `gtperf.instruments` for how class tolerances and certificates become
+    standard uncertainties.
     """
-
-    unit: str
-    bias: float
-    noise: float
-    relative: bool = False
-    description: str = ""
-
-
-def default_instruments():
-    """A typical small-GT test-bed instrument set. Values are representative assumptions, not a standard."""
-    inst = {
-        "P_amb": Instrument("mbar", 0.3, 0.05, description="barometer"),
-        "RH": Instrument("%", 1.5, 0.3, description="humidity probe"),
-        "dP_inlet": Instrument("mbar", 0.1, 0.05, description="inlet depression"),
-        "dP_exhaust": Instrument("mbar", 0.2, 0.1, description="exhaust back-pressure"),
-        "W_fuel": Instrument("kg/s", 0.0020, 0.003, relative=True, description="Coriolis fuel flow meter"),
-        "LHV": Instrument("MJ/kg", 0.0015, 0.0002, relative=True, description="gas chromatograph LHV"),
-        "P_elec": Instrument("kW", 0.0010, 0.0015, relative=True, description="revenue-class power metering"),
-        "N_gg": Instrument("%", 0.05, 0.02, description="gas generator speed (diagnostic)"),
-        "P3": Instrument("bar", 0.02, 0.005, description="compressor delivery pressure (diagnostic)"),
-        "T3": Instrument("degC", 1.0, 0.3, description="compressor delivery temperature (diagnostic)"),
-    }
-    for i in range(1, N_AMBIENT_T + 1):
-        inst[f"T_amb_{i}"] = Instrument("degC", 0.15, 0.05, description="inlet air RTD")
-    for i in range(1, N_EXHAUST_TC + 1):
-        inst[f"T_exh_{i:02d}"] = Instrument("degC", 1.0, 0.5, description="exhaust thermocouple, type K")
-    return inst
+    return load_instruments(path)
 
 
 @dataclass(frozen=True)
@@ -92,13 +74,6 @@ def _ar1(rng, n, std, rho=0.95):
     return x
 
 
-def _exhaust_pattern():
-    """Fixed circumferential exhaust temperature profile (swirled combustor pattern), K, zero mean."""
-    theta = 2 * np.pi * np.arange(N_EXHAUST_TC) / N_EXHAUST_TC
-    p = 8.0 * np.sin(2 * theta + 0.4) + 3.0 * np.cos(3 * theta)
-    return p - p.mean()
-
-
 def generate_test(
     engine,
     points,
@@ -110,18 +85,33 @@ def generate_test(
     instruments=None,
     seed=0,
     serial="ESN-0001",
+    test_date=DEFAULT_TEST_DATE,
+    exhaust=None,
+    exhaust_model=None,
+    burner_fault=None,
 ):
     """Generate a 1 Hz pass-off test log for `engine` with hidden `health`.
+
+    Each instrument's hidden calibration error is drawn from its own uncertainty
+    model: within the class tolerance (with its stated distribution), or the
+    certificate's as-found error plus the certificate uncertainty. The exhaust rake
+    reads a field from `gtperf.exhaust`: `exhaust` (an ExhaustField) if given,
+    otherwise one drawn from `exhaust_model` with optional `burner_fault`.
 
     Returns a SyntheticTest whose `truth` holds what the analysis should recover:
     the engine's true performance at reference (ISO, no losses) conditions.
     """
     rng = np.random.default_rng(seed)
     inst = instruments or default_instruments()
-    biases = {tag: rng.normal(0, i.bias) for tag, i in inst.items()}
-    pattern = _exhaust_pattern()
+    biases = {tag: i.draw_bias(rng, test_date=test_date) for tag, i in inst.items()}
+    # the engine's exhaust field comes from its own random stream, so supplying one leaves the sensor noise unchanged
+    if exhaust is None:
+        exhaust = (exhaust_model or ExhaustProfileModel()).sample(np.random.default_rng([seed, 1]), burner_fault)
+    field_ = exhaust
+    rated = engine.run().electrical_power  # nominal engine at ISO: load fraction reference
     n = int(duration_s)
     frames = []
+    loads = []
 
     for k, pt in enumerate(points):
         frac = np.linspace(0, 1, n)
@@ -149,9 +139,12 @@ def generate_test(
         }
         for i in range(N_AMBIENT_T):
             true[f"T_amb_{i + 1}"] = t_amb
-        t_exh = lerp(lambda r: r.exhaust.t - 273.15)
+        t_exh = lerp(lambda r: r.exhaust.t - 273.15)  # mass-weighted mean from the cycle
+        load = 0.5 * (ends[0].electrical_power + ends[1].electrical_power) / rated
+        loads.append(load)
+        profile = field_.rake(load)
         for i in range(N_EXHAUST_TC):
-            true[f"T_exh_{i + 1:02d}"] = t_exh + pattern[i]
+            true[f"T_exh_{i + 1:02d}"] = t_exh + profile[i]
 
         frame = {"time_s": np.arange(n) + k * (n + 300), "point": np.full(n, k + 1)}
         for tag, i in inst.items():
@@ -183,6 +176,8 @@ def generate_test(
         "exhaust_temp_C": ref.exhaust.t - 273.15,
         "exhaust_flow": ref.exhaust.w,
         "health": health,
+        "exhaust_field": field_,
+        "loads": loads,
     }
     metadata = {
         "serial": serial,
@@ -190,5 +185,6 @@ def generate_test(
         "duration_s": duration_s,
         "instruments": inst,
         "faults": list(faults),
+        "test_date": test_date,
     }
     return SyntheticTest(data, metadata, truth, biases)

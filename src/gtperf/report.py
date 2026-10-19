@@ -6,6 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .exhaust import RAKE_ANGLES_DEG, RAKE_AREA_FRACTIONS
+from .instruments import uncertainty_table
 from .passoff import AMBIENT_TAGS, EXHAUST_TAGS, RESULT_LABELS, RESULTS
 
 SURFACE, INK, INK2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
@@ -103,8 +105,61 @@ def mc_figure(unc, checks, path):
     plt.close(fig)
 
 
-def write_report(result, metadata, out_dir, truth=None, data=None):
-    """Write report.md and its figures into out_dir. Returns the report path."""
+def exhaust_figure(fields, loads, path, titles=None, limit_K=None):
+    """Exhaust-plane temperature deviation (K from the mass-weighted mean) with the rake, one row per field.
+
+    `fields` are ExhaustField objects, `loads` the load fractions shown as columns.
+    Rake thermocouples are drawn at their angles and immersions; the cold spot of
+    each field (the coldest point of its circumferential pattern) is marked.
+    """
+    import matplotlib.pyplot as plt
+
+    _style(plt)
+    titles = titles or [""] * len(fields)
+    grids = [[f.grid(L) for L in loads] for f in fields]
+    fig, axes = plt.subplots(len(fields), len(loads), figsize=(4.6 * len(loads) + 0.8, 4.3 * len(fields)),
+                             subplot_kw={"projection": "polar"}, constrained_layout=True, squeeze=False)
+    for row, f, gs, title in zip(axes, fields, grids, titles):
+        h = f.model.hub_tip_ratio
+        lim = limit_K or max(float(np.max(np.abs(g[2]))) for g in gs)
+        for ax, L, (theta, rhat, dev) in zip(row, loads, gs):
+            r = h + rhat * (1 - h)
+            mesh = ax.pcolormesh(np.radians(theta), r, dev, cmap="RdBu_r", vmin=-lim, vmax=lim, shading="auto",
+                                 rasterized=True)
+            r_tc = h + f.model.radius_fraction(RAKE_AREA_FRACTIONS) * (1 - h)
+            ax.plot(np.radians(RAKE_ANGLES_DEG), r_tc, "o", ms=6, color=INK, mec=SURFACE, mew=1.2, ls="none")
+            for k, a in enumerate(RAKE_ANGLES_DEG):
+                ax.annotate(f"{k + 1}", (np.radians(a), 1.07), fontsize=7, color=INK2, ha="center", va="center",
+                            annotation_clip=False)
+            cold = f.cold_spot_deg(L)
+            ax.annotate("", xy=(np.radians(cold), h - 0.02), xytext=(np.radians(cold), 0.2),
+                        arrowprops={"arrowstyle": "->", "color": INK2, "lw": 1.2})
+            ax.set_ylim(0, 1.0)
+            ax.set_yticks([])
+            ax.set_xticks(np.radians(np.arange(0, 360, 60)), [f"{d}°" for d in range(0, 360, 60)], fontsize=8)
+            ax.tick_params(axis="x", pad=8)
+            ax.set_theta_zero_location("N")
+            ax.set_theta_direction(-1)
+            ax.grid(False)
+            ax.spines["polar"].set_visible(False)
+            ax.set_title(f"{title}\n{100 * L:.0f} % load: swirl {f.model.swirl_deg(L, f.swirl0_deg):.0f}°, "
+                         f"cold spot {cold:.0f}° (arrow)", loc="left", fontsize=10)
+        cb = fig.colorbar(mesh, ax=list(row), shrink=0.75, pad=0.02)
+        cb.set_label("T minus mass-weighted mean (K)")
+        cb.outline.set_visible(False)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def write_report(result, metadata, out_dir, truth=None, data=None, scatter_estimates=None, burner_surveys=None,
+                 exhaust_figure_path=None):
+    """Write report.md and its figures into out_dir. Returns the report path.
+
+    `scatter_estimates` (optional) is a dict of `scatter.ScatterEstimate` from the
+    production history, shown with the correction-model terms. `burner_surveys`
+    maps a label to an `exhaust.BurnerCheck` from a rake load survey.
+    `exhaust_figure_path` (relative to the report) links an exhaust field figure.
+    """
     out = Path(out_dir)
     fig_dir = out / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
@@ -122,8 +177,11 @@ def write_report(result, metadata, out_dir, truth=None, data=None):
     L = [f"# Pass-off test report: {metadata.get('serial', 'engine')}", ""]
     for w in result.warnings:
         L += [f"> **Warning:** {w}", ""]
+    date_text = f" Test date: {result.test_date}." if result.test_date else ""
     L += [f"**Overall result: {overall}** against the acceptance limits below, on "
-          f"{len(result.points)} test points at base load. Fuel: {metadata.get('fuel', 'n/a')}.", ""]
+          f"{len(result.points)} test points at base load. Fuel: {metadata.get('fuel', 'n/a')}.{date_text}", ""]
+    for n in result.notes:
+        L += [f"> Note: {n}", ""]
 
     L += ["## 1. Corrected results against acceptance limits", "",
           "Corrected to reference conditions (ISO 15 °C, 1013.25 mbar, 60 % RH, no inlet or exhaust losses). "
@@ -195,9 +253,83 @@ def write_report(result, metadata, out_dir, truth=None, data=None):
     if unc.mc is not None:
         L += ["", "![Monte Carlo distributions](figures/monte_carlo.png)"]
     det = result.u_sys_detail
+    prof = det.get("profile")
+    k_tc = prof.n_tc if prof is not None else len([t for t in EXHAUST_TAGS if t in r.clean])
     L += ["", f"Exhaust temperature systematic uncertainty combines thermocouple calibration "
-          f"({det['T_exh calibration']:.2f} K) and profile sampling ({det['T_exh profile sampling']:.2f} K), the "
-          f"second arising because excluded thermocouples leave the non-uniform exhaust profile under-sampled."]
+          f"({det['T_exh calibration']:.2f} K for the mean of {k_tc} thermocouples) and rake profile sampling "
+          f"({det['T_exh profile sampling']:.2f} K). The second is a Monte Carlo over the exhaust field model: "
+          "burner fuel split deviations, swirl angle, lobe strength and radial profile drawn from their priors, "
+          f"the rake sampled at its {k_tc} valid positions, and the rake mean compared with the mass-weighted mean. "
+          f"The expected offset of the rake mean, {det.get('T_exh profile correction', 0.0):+.2f} K, was subtracted "
+          "as a correction."]
+    if r.burner is not None:
+        b = r.burner
+        L += ["", f"Burner check (rake, before sensor exclusions): spread {b.spread:.1f} K; coldest adjacent pair "
+              f"T_exh_{b.thermocouples[0] + 1:02d}/T_exh_{b.thermocouples[1] + 1:02d} reads {-b.depth:+.1f} K from "
+              f"the median; a cold spot needs it below {-b.threshold:.1f} K (99.9th percentile for healthy "
+              f"engines from the profile model). {'Cold spot detected.' if b.flagged else 'No cold spot.'}"]
+
+    if burner_surveys:
+        L += ["", "Burner diagnostic load survey: the rake is read at several loads and any cold spot is tracked. "
+              "A burner cold spot rotates with load by the modelled swirl angle; a sensor fault stays put.", "",
+              "| Case | Loads | Cold spot depth / threshold (K) | Cold spot angle | Rotation measured / modelled | "
+              "Verdict |", "|---|---|---|---|---|---|"]
+        for label, bc in burner_surveys.items():
+            loads = ", ".join(f"{100 * s.load:.0f} %" for s in bc.spots)
+            depth = ", ".join(f"{s.depth:.0f} / {s.threshold:.0f}" for s in bc.spots)
+            ang = ", ".join(f"{s.angle_deg:.0f}°" if s.flagged else "–" for s in bc.spots)
+            rot = (f"{bc.rotation_deg:+.0f}° / {bc.modelled_rotation_deg:+.0f}°" if bc.rotation_deg is not None
+                   else "–")
+            L.append(f"| {label} | {loads} | {depth} | {ang} | {rot} | {bc.verdict} |")
+    if exhaust_figure_path:
+        L += ["", f"![Exhaust temperature field and rake]({exhaust_figure_path})"]
+
+    if result.instruments and any(getattr(i, "components", ()) for i in result.instruments.values()):
+        readings = {t: float(r.clean[t].mean()) for t in r.clean.columns if t in result.instruments}
+        rows = uncertainty_table(result.instruments, readings, result.test_date)
+        L += ["", "### Instrument uncertainty sources", "",
+              "Each calibration uncertainty comes from the instrument's accuracy class or specification, or from "
+              "its calibration certificate when one is in date for the test (the reading is then corrected by the "
+              "as-found error). Class tolerances are converted to standard uncertainties with the stated "
+              "distribution (rectangular: tolerance / √3). u is per channel at the test reading.", "",
+              "| Channels | Component | Basis | Tolerance or certificate | Distribution | u (k = 1) | Source |",
+              "|---|---|---|---|---|---:|---|"]
+        for row in rows:
+            tags = row["tags"]
+            tag_text = tags[0] if len(tags) == 1 else f"{tags[0]} … {tags[-1]} ({len(tags)})"
+            mark = "" if row["verified"] else " (applicability not verified, see note)"
+            src = f"[link]({row['source'].replace(' ', '%20')}){mark}" if row["source"] else "none"
+            cells = [tag_text, row["component"], row["basis"], row["detail"], row["distribution"],
+                     f"{row['u']:.3g} {row['unit']}", src]
+            L.append("| " + " | ".join(c.replace("|", "\\|") for c in cells) + " |")
+        unverified = [row for row in rows if not row["verified"]]
+        for row in unverified:
+            L += ["", f"Note on {row['tags'][0]}: {row['note']}"]
+        if result.calibration:
+            L += ["", "Calibration status on the test date:", "",
+                  "| Channel | Certificate | Calibrated | Due | Status |", "|---|---|---|---|---|"]
+            for c in result.calibration:
+                L.append(f"| {c['tag']} ({c['component']}) | {c['certificate']} | {c['date']} | {c['due']} | "
+                         f"{c['status']} |")
+        if result.corrections:
+            items = [f"{t} {100 * e:+.3f} %" if result.instruments[t].relative
+                     else f"{t} {e:+.3f} {result.instruments[t].unit}" for t, e in result.corrections.items()]
+            L += ["", "Certificate corrections applied to the readings: " + ", ".join(items)
+                  + " (as-found error subtracted)."]
+
+    sc = result.scatter
+    if sc is not None:
+        L += ["", "### Correction-model scatter", "",
+              f"Build-to-build health scatter used for the correction-model terms: {sc.source}. Compressor flow "
+              f"{100 * sc.compressor_flow:.2f} %, compressor efficiency {100 * sc.compressor_eff:.2f} pts, turbine "
+              f"efficiency {100 * sc.turbine_eff:.2f} pts, turbine capacity {100 * sc.turbine_capacity:.2f} % "
+              "(one standard deviation)."]
+        if scatter_estimates:
+            L += ["", "| Parameter | Estimate | 95 % interval | Hidden truth (synthetic) |", "|---|---:|---|---:|"]
+            for name, e in scatter_estimates.items():
+                tv = getattr(e, "truth", None)
+                L.append(f"| {name} | {e.value:.3f} | {e.lower:.3f} to {e.upper:.3f} | "
+                         f"{'–' if tv is None else f'{tv:.3f}'} |")
 
     if truth:
         L += ["", "## 6. Check against the known truth (synthetic test only)", "",
@@ -219,9 +351,12 @@ def write_report(result, metadata, out_dir, truth=None, data=None):
           "- Acceptance follows a guarded-band reading: PASS needs the margin to exceed U95; a smaller "
           "positive margin is reported as PASS (within uncertainty).",
           "- Correction-model uncertainty: the correction curves describe the nominal engine, so the build-to-build "
-          "scatter of compressor flow, compressor efficiency and turbine efficiency (assumed standard deviations) "
-          "is propagated through the correction. This term grows with the distance from reference conditions.",
-          "- Instrument uncertainties are representative assumptions, not a calibration record."]
+          "scatter of component health (estimated from production pass-off history when available) is propagated "
+          "through the correction. This term grows with the distance from reference conditions.",
+          "- Instrument uncertainties come from accuracy classes, manufacturer specifications and calibration "
+          "certificates listed above. The certificates for this synthetic test bed are illustrative records.",
+          "- The exhaust rake reads a modelled exhaust field (burner streaks rotated by swirl and smeared by mixing, "
+          "plus a radial profile). Its under-sampling uncertainty is a Monte Carlo over that model's priors."]
     path = out / "report.md"
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
     return path

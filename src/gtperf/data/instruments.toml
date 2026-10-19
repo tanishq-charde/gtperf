@@ -1,0 +1,359 @@
+# Pass-off test-bed instrument list.
+#
+# Every systematic uncertainty below comes from a standard's accuracy class or a
+# manufacturer's published specification (each with the URL where the number was
+# checked on 2026-10-19), or from a calibration certificate for that instrument.
+#
+# Conventions
+# - Tolerances are +/- bounds in the instrument's units. "sum": fixed + of_reading*|x|
+#   + of_span*span. "max": the greater of the terms (IEC 60584-1 style).
+# - distribution: "rectangular" (bound / sqrt(3)) when the source only promises the
+#   error stays within the limits; "normal" with coverage_k when the source states the
+#   bound as an expanded uncertainty.
+# - Certificates: as_found_error (reading minus reference) and expanded_uncertainty
+#   with k. For relative instruments (relative = true) both are in % of reading. An
+#   in-date certificate overrides the class tolerance and its error is subtracted
+#   from the reading. Out-of-date certificates are ignored and flagged.
+# - The certificates in this file are ILLUSTRATIVE records for a synthetic test bed:
+#   plausible values for an accredited laboratory, not real calibrations.
+# - The calibration interval (365 days) is a test-bed policy, not a standard.
+# - noise: random standard uncertainty per 1 Hz sample, used ONLY by the synthetic
+#   data generator. The analysis estimates random uncertainty from the logged data.
+# - verified = false marks a number that is in the cited source but whose
+#   applicability could not be confirmed (see the note).
+#
+# Not verified and therefore not used: ASME PTC 22-2014 Table 1-1 test uncertainty
+# limits (the code is not freely available; the public preview does not contain them).
+
+calibration_interval_days = 365
+
+# --- inlet air temperature: three redundant Pt100 RTDs -------------------------
+[[instrument]]
+tags = ["T_amb_1", "T_amb_2", "T_amb_3"]
+group = "Inlet air RTDs"
+quantity = "Inlet air temperature"
+description = "inlet air Pt100 RTD, 4-wire"
+unit = "degC"
+nominal = 15.0
+noise = 0.05
+
+[[instrument.component]]
+name = "Pt100 element and readout (loop)"
+standard = "IEC 60751"
+class = "class A"
+formula = "±(0.15 + 0.002·|t|) °C"
+fixed = 0.15
+of_reading = 0.002
+combine = "sum"
+distribution = "rectangular"
+source = "https://reotemp.com/2025/06/24/rtd-tolerance-classes-explained"
+note = "Class A validity range quoted by the source as -30 to 300 °C; test ambients stay inside it."
+
+[instrument.component.certificates.T_amb_1]
+id = "TB2-RTD-2604-01"
+as_found_error = 0.03
+expanded_uncertainty = 0.05
+k = 2
+date = 2026-04-20
+laboratory = "illustrative UKAS-style temperature lab (comparison in stirred bath at 0, 20, 40 °C)"
+
+[instrument.component.certificates.T_amb_2]
+id = "TB2-RTD-2604-02"
+as_found_error = -0.05
+expanded_uncertainty = 0.05
+k = 2
+date = 2026-04-20
+
+[instrument.component.certificates.T_amb_3]
+id = "TB2-RTD-2604-03"
+as_found_error = 0.02
+expanded_uncertainty = 0.05
+k = 2
+date = 2026-04-20
+
+# --- barometric pressure -------------------------------------------------------
+[[instrument]]
+tag = "P_amb"
+group = "Barometer"
+quantity = "Barometric pressure"
+description = "digital barometer (Vaisala PTB330 class A type)"
+unit = "mbar"
+nominal = 1013.25
+noise = 0.05
+
+[[instrument.component]]
+name = "Barometer total accuracy"
+standard = "Vaisala PTB330 specification"
+class = "class A, 500-1100 hPa, -40 to +60 °C"
+formula = "±0.15 hPa"
+fixed = 0.15
+distribution = "rectangular"
+source = "https://docs.vaisala.com/r/M210855EN-E/en-US/GUID-0A761DB8-D737-455F-B497-15DDB047E696"
+note = "The specification does not state a coverage factor for total accuracy, so it is treated as a bound."
+
+# --- relative humidity -----------------------------------------------------------
+[[instrument]]
+tag = "RH"
+group = "Humidity probe"
+quantity = "Relative humidity"
+description = "capacitive humidity probe (Vaisala HMP155 type)"
+unit = "%"
+nominal = 60.0
+noise = 0.3
+
+[[instrument.component]]
+name = "Humidity probe accuracy"
+standard = "Vaisala HMP155 specification"
+class = "-20 to +40 °C"
+formula = "±(1.0 + 0.008·reading) %RH"
+fixed = 1.0
+of_reading = 0.008
+combine = "sum"
+distribution = "rectangular"
+source = "https://s.campbellsci.com/documents/au/product-brochures/b_hmp155.pdf"
+note = "Includes non-linearity, hysteresis and repeatability (per the datasheet)."
+
+# --- inlet and exhaust pressure losses: differential pressure transmitters --------
+[[instrument]]
+tag = "dP_inlet"
+group = "Inlet depression transmitter"
+quantity = "Inlet pressure loss"
+description = "differential pressure transmitter, calibrated span 0-25 mbar"
+unit = "mbar"
+nominal = 5.0
+noise = 0.05
+
+[[instrument.component]]
+name = "DP transmitter reference accuracy"
+standard = "Rosemount 3051S specification"
+class = "Classic performance class"
+formula = "±0.035 % of calibrated span (span 25 mbar)"
+of_span = 0.00035
+span = 25.0
+distribution = "rectangular"
+source = "https://emerson.com:443/documents/automation/product-data-sheet-rosemount-3051s-series-of-instrumentation-en-73154.pdf"
+note = "Reference accuracy only. Rangedown, static-pressure and installation (tapping) effects are not included."
+
+[[instrument]]
+tag = "dP_exhaust"
+group = "Exhaust back-pressure transmitter"
+quantity = "Exhaust pressure loss"
+description = "differential pressure transmitter, calibrated span 0-50 mbar"
+unit = "mbar"
+nominal = 12.0
+noise = 0.1
+
+[[instrument.component]]
+name = "DP transmitter reference accuracy"
+standard = "Rosemount 3051S specification"
+class = "Classic performance class"
+formula = "±0.035 % of calibrated span (span 50 mbar)"
+of_span = 0.00035
+span = 50.0
+distribution = "rectangular"
+source = "https://emerson.com:443/documents/automation/product-data-sheet-rosemount-3051s-series-of-instrumentation-en-73154.pdf"
+note = "Reference accuracy only. Rangedown, static-pressure and installation (tapping) effects are not included."
+
+# --- fuel mass flow: Coriolis meter --------------------------------------------
+[[instrument]]
+tag = "W_fuel"
+group = "Fuel gas Coriolis meter"
+quantity = "Fuel mass flow"
+description = "Coriolis mass flow meter on fuel gas"
+unit = "kg/s"
+relative = true
+nominal = 0.8
+noise = 0.003
+
+[[instrument.component]]
+name = "Coriolis gas mass flow accuracy"
+standard = "Micro Motion ELITE CMFS specification"
+class = "gas"
+formula = "±0.25 % of rate"
+of_reading = 0.0025
+distribution = "rectangular"
+source = "https://www.instrumart.com/products/42309/micro-motion-elite-coriolis-flow-meters"
+note = "Zero stability (which adds at low flow) was not verified and is not included."
+
+[instrument.component.certificate]
+id = "TB2-FLOW-2602-07"
+as_found_error = 0.12
+expanded_uncertainty = 0.20
+k = 2
+date = 2026-02-03
+laboratory = "illustrative natural-gas flow laboratory, calibrated at line pressure"
+
+# --- fuel lower heating value: gas chromatograph + ISO 6976 -----------------------
+[[instrument]]
+tag = "LHV"
+group = "Gas chromatograph LHV"
+quantity = "Fuel lower heating value"
+description = "on-line gas chromatograph, heating value by ISO 6976"
+unit = "MJ/kg"
+relative = true
+nominal = 47.0
+noise = 0.0002
+
+[[instrument.component]]
+name = "Mass-basis heating value from composition"
+standard = "ISO 6976:2016 method"
+class = "u = 0.06 % (k = 1)"
+formula = "u = 0.030 / 48.977 MJ/kg"
+of_reading = 0.0006
+distribution = "normal"
+coverage_k = 1.0
+source = "https://www.mdpi.com/2674-0389/4/1/1"
+verified = false
+note = "Standard uncertainty of the mass-basis superior calorific value for the worked example in van der Veen (VSL), Methane 4(1), 2025, with composition correlations. The author states the example is not intended to represent typical performance, and the LHV is assumed to have the same relative uncertainty. Replace with the site GC's own ISO 6976 / ISO 6974 uncertainty."
+
+# --- electrical power: CTs, VTs and revenue meter ----------------------------------
+[[instrument]]
+tag = "P_elec"
+group = "Power metering"
+quantity = "Electrical power"
+description = "generator terminal power: measuring CTs and VTs with a class 0.2S meter"
+unit = "kW"
+relative = true
+nominal = 12900.0
+noise = 0.0015
+
+[[instrument.component]]
+name = "Current transformers (ratio and phase)"
+standard = "IEC 61869-2"
+class = "class 0.2"
+formula = "±(0.2 % + tan φ · 10′) at 100-120 % In, pf 0.9 → ±0.341 %"
+of_reading = 0.00341
+distribution = "rectangular"
+source = "https://imsi.p.lodz.pl/sites/i25/files/2023-12/cw2_ v0318.pdf"
+note = "Class 0.2 limits from PN-EN 61869-2 Table 1: ±0.2 % / ±10 min at 100-120 % In (±0.35 % / ±15 min at 20 %). Power factor 0.9 and CT loading of 100-120 % at base load are test-bed assumptions."
+
+[instrument.component.certificate]
+id = "TB2-CT-2511-01"
+as_found_error = -0.03
+expanded_uncertainty = 0.06
+k = 2
+date = 2025-11-18
+laboratory = "illustrative instrument-transformer laboratory; power error of the CT set at rated burden and pf 0.9"
+
+[[instrument.component]]
+name = "Voltage transformers (ratio and phase)"
+standard = "IEC 61869-3 (limits as in IEC 60044-2)"
+class = "class 0.2"
+formula = "±(0.2 % + tan φ · 10′) at 80-120 % Un, pf 0.9 → ±0.341 %"
+of_reading = 0.00341
+distribution = "rectangular"
+source = "https://www.kth.se/social/files/55f12ed5f2765409c53d3c14/2%20Instrument%20transformers.pdf"
+note = "The source quotes IEC 60044-2 (predecessor of IEC 61869-3): ±0.2 % ratio, ±10 min phase. That IEC 61869-3 keeps the same class 0.2 limits was not checked against its text."
+
+[instrument.component.certificate]
+id = "TB2-VT-2511-02"
+as_found_error = 0.02
+expanded_uncertainty = 0.05
+k = 2
+date = 2025-11-18
+
+[[instrument.component]]
+name = "Active energy meter"
+standard = "IEC 62053-22"
+class = "class 0.2S"
+formula = "±0.2 % (pf 1), ±0.3 % (pf 0.5 ind.) for 0.05-0.1 In ≤ I ≤ Imax; ±0.3 % used at pf 0.9"
+of_reading = 0.003
+distribution = "rectangular"
+source = "https://assets.elexon.co.uk/wp-content/uploads/sites/11/2012/02/28171745/redlining_for_cp1319_cop4_v0.1.pdf"
+note = "Elexon Code of Practice 4 Table C1 (citing BS EN 62053-22). No limit is tabulated at pf 0.9, so the pf 0.5 limit is used."
+
+[instrument.component.certificate]
+id = "TB2-MTR-2603-03"
+as_found_error = 0.04
+expanded_uncertainty = 0.08
+k = 2
+date = 2026-03-09
+
+# --- exhaust temperature rake: 12 type K thermocouples ----------------------------
+[[instrument]]
+tags = ["T_exh_01", "T_exh_02", "T_exh_03", "T_exh_04", "T_exh_05", "T_exh_06",
+        "T_exh_07", "T_exh_08", "T_exh_09", "T_exh_10", "T_exh_11", "T_exh_12"]
+group = "Exhaust thermocouple rake"
+quantity = "Exhaust temperature"
+description = "exhaust thermocouple, type K, mineral insulated"
+unit = "degC"
+nominal = 550.0
+noise = 0.5
+
+[[instrument.component]]
+name = "Thermocouple tolerance"
+standard = "IEC 60584-1"
+class = "type K class 1"
+formula = "±1.5 °C (-40 to 375 °C) or ±0.004·|t| (375 to 1000 °C)"
+fixed = 1.5
+of_reading = 0.004
+combine = "max"
+distribution = "rectangular"
+source = "https://tcdirect.co.uk/thermocouple-sensors/thermocouple-accuracies.aspx"
+note = "Errors are taken as independent between thermocouples (assumes they are not cut from one wire batch); a shared wire-batch error would not average down across the rake."
+
+# --- diagnostic channels (not used in the corrected results) -------------------------
+[[instrument]]
+tag = "N_gg"
+group = "Gas generator speed"
+quantity = "Gas generator speed (diagnostic)"
+description = "gas generator speed, magnetic pickup and tachometer module"
+unit = "%"
+nominal = 100.0
+noise = 0.02
+
+[[instrument.component]]
+name = "Tachometer accuracy"
+standard = "Bently Nevada 3500/50M specification"
+class = "10,000-99,999 rpm"
+formula = "±0.01 % of true shaft speed"
+of_reading = 0.0001
+distribution = "rectangular"
+source = "https://core.instrumart.com/assets/3500-50M-Datasheet.pdf"
+note = "Assumes the gas generator runs above 10,000 rpm (the engine's actual speed was not verified)."
+
+[instrument.component.certificate]
+id = "TB2-SPD-2506-01"
+as_found_error = 0.004
+expanded_uncertainty = 0.006
+k = 2
+date = 2025-06-30
+
+[[instrument]]
+tag = "P3"
+group = "Compressor delivery pressure"
+quantity = "Compressor delivery pressure (diagnostic)"
+description = "gauge pressure transmitter, calibrated span 0-25 bar"
+unit = "bar"
+nominal = 17.0
+noise = 0.005
+
+[[instrument.component]]
+name = "Pressure transmitter reference accuracy"
+standard = "Rosemount 3051S specification"
+class = "Classic performance class"
+formula = "±0.035 % of calibrated span (span 25 bar)"
+of_span = 0.00035
+span = 25.0
+distribution = "rectangular"
+source = "https://emerson.com:443/documents/automation/product-data-sheet-rosemount-3051s-series-of-instrumentation-en-73154.pdf"
+
+[[instrument]]
+tag = "T3"
+group = "Compressor delivery temperature"
+quantity = "Compressor delivery temperature (diagnostic)"
+description = "compressor delivery thermocouple, type K"
+unit = "degC"
+nominal = 420.0
+noise = 0.3
+
+[[instrument.component]]
+name = "Thermocouple tolerance"
+standard = "IEC 60584-1"
+class = "type K class 1"
+formula = "±1.5 °C (-40 to 375 °C) or ±0.004·|t| (375 to 1000 °C)"
+fixed = 1.5
+of_reading = 0.004
+combine = "max"
+distribution = "rectangular"
+source = "https://tcdirect.co.uk/thermocouple-sensors/thermocouple-accuracies.aspx"

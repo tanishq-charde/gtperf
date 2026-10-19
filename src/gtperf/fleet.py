@@ -59,27 +59,34 @@ def default_production_events():
     ]
 
 
-def production_sequence(engine, n=200, events=None, seed=7):
+def production_sequence(engine, n=200, events=None, seed=7, noise=None, build_scatter=None):
     """Corrected (ISO) pass-off measurements for n engines in build order.
 
     Returns a DataFrame with the gas-path measurement deltas against nominal, plus
-    corrected power, heat rate and exhaust temperature, and the true health.
+    corrected power, heat rate and exhaust temperature, the true health, and the
+    true (noise-free) power, heat rate and exhaust temperature. `noise` (measurement
+    standard deviations, default PASSOFF_NOISE) and `build_scatter` (health standard
+    deviations, default BUILD_SCATTER) are the generator's hidden truth: an analysis
+    must estimate the scatter from the data (see `gtperf.scatter`).
     """
     rng = np.random.default_rng(seed)
     events = default_production_events() if events is None else events
+    noise = PASSOFF_NOISE if noise is None else np.asarray(noise, float)
+    build_scatter = BUILD_SCATTER if build_scatter is None else np.asarray(build_scatter, float)
     nominal = engine.run(ISO, inlet_loss=0.0, exhaust_loss=0.0)
     z0 = measurement_vector(nominal)
     rows = []
     guess = nominal.info["solution"]
     for i in range(1, n + 1):
-        x = rng.normal(0, BUILD_SCATTER)
+        x = rng.normal(0, build_scatter)
         bias = np.zeros(6)
         for ev in events:
             if ev.first <= i <= (ev.last or n):
                 x = x + ev.health_shift
                 bias = bias + ev.measurement_bias
         r = engine.run(ISO, inlet_loss=0.0, exhaust_loss=0.0, health=health_from_vector(x), guess=guess)
-        dz = deltas(measurement_vector(r), z0) + bias + rng.normal(0, PASSOFF_NOISE)
+        dz_true = deltas(measurement_vector(r), z0)
+        dz = dz_true + bias + rng.normal(0, noise)
         hr = nominal.heat_rate * (1 + dz[1] / 100) / (1 + dz[0] / 100)  # fuel heat per unit output
         rows.append({
             "build": i,
@@ -88,6 +95,9 @@ def production_sequence(engine, n=200, events=None, seed=7):
             "heat_rate": hr,
             "egt_C": nominal.exhaust.t - 273.15 + dz[2],
             **{f"true_{h}": x[j] for j, h in enumerate(HEALTH)},
+            "true_power_MW": r.electrical_power / 1e6,
+            "true_heat_rate": r.heat_rate,
+            "true_egt_C": r.exhaust.t - 273.15,
         })
     return pd.DataFrame(rows)
 

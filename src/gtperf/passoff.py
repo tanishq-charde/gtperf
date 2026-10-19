@@ -8,7 +8,13 @@ flow cannot be measured directly, so it is derived from a heat balance.
 
 Uncertainty is propagated two ways, following the GUM (JCGM 100) and its Monte
 Carlo supplement (JCGM 101). Instrument calibration (systematic) errors are
-shared by every test point; random errors are independent per point.
+shared by every test point; random errors are independent per point. Each
+instrument's calibration uncertainty comes from its accuracy class or a
+calibration certificate (`gtperf.instruments`); readings are first corrected by
+in-date certificate errors. The exhaust rake's under-sampling of the
+non-uniform exhaust field is found by Monte Carlo over the burner pattern model
+(`gtperf.exhaust`), and the correction model's own uncertainty comes from the
+build-to-build scatter estimated from production history (`gtperf.scatter`).
 """
 
 from __future__ import annotations
@@ -19,6 +25,8 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .cycle import ISO, Ambient
+from .exhaust import ExhaustProfileModel, cold_spot, profile_uncertainty
+from .instruments import calibration_status, draw
 from .maps import NEW_AND_CLEAN, Health
 
 AMBIENT_TAGS = [f"T_amb_{i}" for i in range(1, 4)]
@@ -46,6 +54,9 @@ class ValidationLimits:
     exhaust_tc_drift_K: float = 5.0
     # range of 1-minute averages allowed within a test point
     stability: dict = field(default_factory=lambda: {"P_elec": 1.0, "W_fuel": 1.0, "T_amb": 1.0, "T_exh": 3.0})
+    exhaust_model: ExhaustProfileModel = field(default_factory=ExhaustProfileModel)
+    load: float = 1.0  # load fraction of the test points, for the burner cold-spot threshold
+    u_tc: float = 1.27  # thermocouple calibration standard uncertainty used in the cold-spot threshold
 
 
 @dataclass
@@ -54,6 +65,7 @@ class ValidationReport:
     excluded: dict  # tag -> reason
     spikes: dict  # tag -> count removed
     stability: list  # (point, quantity, range, limit, ok)
+    burner: object = None  # exhaust.ColdSpot from the rake, before any thermocouple was excluded
 
     @property
     def stable(self):
@@ -101,13 +113,22 @@ def validate(data, limits=None):
             excluded[tag] = f"disagrees with redundant sensors by {dev[tag]:.2f} K"
 
     valid, means = group_means(EXHAUST_TAGS)
+    # Burner screen first: a cold spot from a lean burner drags adjacent thermocouples down together and must
+    # not be mistaken for (and hidden by excluding) faulty sensors.
+    rake = np.array([means[t].mean() if t in valid else np.nan for t in EXHAUST_TAGS])
+    burner = cold_spot(rake, lim.exhaust_model, lim.load, lim.u_tc)
+    protected = set()
+    if burner.flagged:
+        rdev = rake - np.nanmedian(rake)
+        protected = {EXHAUST_TAGS[i] for i in burner.thermocouples}
+        protected |= {EXHAUST_TAGS[i] for i in range(len(EXHAUST_TAGS)) if rdev[i] < -0.5 * burner.threshold}
     dev = means.sub(means.median(axis=1), axis=0).abs().max()
     first = df.groupby("point").head(60).groupby("point")[valid].mean()
     last = df.groupby("point").tail(60).groupby("point")[valid].mean()
     change = last - first
     drift = change.sub(change.median(axis=1), axis=0).abs().max()
     for tag in valid:
-        if dev[tag] > lim.exhaust_tc_deviation_K:
+        if dev[tag] > lim.exhaust_tc_deviation_K and tag not in protected:
             excluded[tag] = f"reads {dev[tag]:.1f} K from the exhaust median"
         elif drift[tag] > lim.exhaust_tc_drift_K:
             excluded[tag] = f"drifts {drift[tag]:.1f} K relative to other thermocouples"
@@ -124,7 +145,20 @@ def validate(data, limits=None):
             if q in ("P_elec", "W_fuel"):
                 rng = 100 * rng / avg.mean()
             stability.append((int(p), q, float(rng), limit, bool(rng <= limit)))
-    return ValidationReport(clean, excluded, spikes, stability)
+    return ValidationReport(clean, excluded, spikes, stability, burner)
+
+
+def apply_corrections(data, instruments, test_date=None):
+    """Correct each channel by its in-date calibration certificate errors. Returns a copy and the corrections."""
+    df = data.copy()
+    applied = {}
+    for tag, inst in instruments.items():
+        if tag in df and hasattr(inst, "correction"):
+            e = inst.correction(test_date)
+            if e:
+                df[tag] = inst.corrected(df[tag], test_date)
+                applied[tag] = e
+    return df, applied
 
 
 def _group_series(g):
@@ -167,24 +201,48 @@ def average(report):
     return points
 
 
-def systematic_uncertainties(report, points, instruments):
-    """Calibration uncertainty of each averaged quantity (shared by all points)."""
+def _instrument_components(inst, reading, test_date, label, scale=1.0):
+    """(label, standard uncertainty, distribution) of one instrument's calibration components, in reading units."""
+    if not getattr(inst, "components", ()):
+        u = inst.bias * abs(reading) if inst.relative else inst.bias
+        return [(label, u * scale, "normal")]
+    out = []
+    for comp, u, dist in inst.component_u(reading, test_date):
+        u_abs = u * abs(reading) if inst.relative else u
+        out.append((f"{label}: {comp.name}", u_abs * scale, dist))
+    return out
+
+
+def systematic_uncertainties(report, points, instruments, test_date=None, exhaust_model=None, load=1.0,
+                             profile_trials=4000):
+    """Calibration uncertainty of each averaged quantity (shared by all points).
+
+    Returns (u, detail, components): `u` maps quantity -> combined standard
+    uncertainty; `components` maps quantity -> [(label, u, distribution)] for the
+    Monte Carlo; `detail` holds the exhaust temperature terms and the rake profile
+    Monte Carlo (`profile`). The rake mean of k valid thermocouples carries each
+    thermocouple's calibration error / k, plus the profile under-sampling error,
+    whose expected value is returned as `detail["T_exh profile correction"]` (to be
+    subtracted from the rake mean).
+    """
     cols = report.clean.columns
     mean = {q: np.mean([p.values[q] for p in points]) for q in QUANTITIES}
-    u = {}
+    comps = {}
     for q in SINGLE_TAGS:
-        i = instruments[q]
-        u[q] = i.bias * abs(mean[q]) if i.relative else i.bias
-    amb = [t for t in AMBIENT_TAGS if t in cols]
-    u["T_amb"] = instruments[AMBIENT_TAGS[0]].bias / math.sqrt(len(amb))
-    exh = [t for t in EXHAUST_TAGS if t in cols]
-    k, K = len(exh), len(EXHAUST_TAGS)
-    u_cal = instruments[EXHAUST_TAGS[0]].bias / math.sqrt(k)
-    # finite-population term: excluded thermocouples leave the circumferential profile under-sampled
-    spread = float(report.clean.groupby("point")[exh].mean().std(axis=1, ddof=1).mean())
-    u_profile = spread * math.sqrt(max(1 / k - 1 / K, 0.0))
-    u["T_exh"] = math.hypot(u_cal, u_profile)
-    return u, {"T_exh calibration": u_cal, "T_exh profile sampling": u_profile}
+        comps[q] = _instrument_components(instruments[q], mean[q], test_date, q)
+    for q, tags in (("T_amb", AMBIENT_TAGS), ("T_exh", EXHAUST_TAGS)):
+        valid = [t for t in tags if t in cols]
+        comps[q] = []
+        for t in valid:
+            comps[q] += _instrument_components(instruments[t], mean[q], test_date, t, 1 / len(valid))
+    u_cal = math.sqrt(sum(c[1] ** 2 for c in comps["T_exh"]))
+    mask = np.array([t in cols for t in EXHAUST_TAGS])
+    profile = profile_uncertainty(exhaust_model or ExhaustProfileModel(), load, mask, n=profile_trials)
+    comps["T_exh"].append(("T_exh: rake profile sampling (Monte Carlo)", profile.u, "normal"))
+    u = {q: math.sqrt(sum(c[1] ** 2 for c in comps[q])) for q in QUANTITIES}
+    detail = {"T_exh calibration": u_cal, "T_exh profile sampling": profile.u,
+              "T_exh profile correction": profile.correction, "profile": profile}
+    return u, detail, comps
 
 
 # --- correction to reference conditions -------------------------------------
@@ -205,24 +263,33 @@ class Reference:
 
 @dataclass
 class ProductionScatter:
-    """Build-to-build standard deviations (k=1) of component health. Assumed values.
+    """Build-to-build standard deviations (k=1) of component health, as fractions.
 
     The correction curves come from the nominal engine, but each production engine
     differs slightly, so its true response to ambient conditions differs too. This
     is the main source of correction-method uncertainty, and it grows with the
     distance between test and reference conditions.
+
+    The defaults are placeholder assumptions, used only when no production history
+    is available. `gtperf.scatter.production_scatter` estimates these values (with
+    confidence intervals) from a production pass-off history; `source` records
+    which was used.
     """
 
     compressor_flow: float = 0.005
     compressor_eff: float = 0.004
     turbine_eff: float = 0.003
+    turbine_capacity: float = 0.0
+    source: str = "assumed (no production history)"
 
     def perturbations(self):
-        return [
+        out = [
             ("Correction model: compressor flow scatter", Health(compressor_flow_scale=1 + self.compressor_flow)),
             ("Correction model: compressor efficiency scatter", Health(compressor_eff_delta=self.compressor_eff)),
             ("Correction model: turbine efficiency scatter", Health(turbine_eff_delta=self.turbine_eff)),
+            ("Correction model: turbine capacity scatter", Health(turbine_capacity_scale=1 + self.turbine_capacity)),
         ]
+        return [(label, h) for label, h in out if h != NEW_AND_CLEAN]
 
 
 class PassOffAnalysis:
@@ -390,8 +457,13 @@ def _linearised_model(analysis, points, step=None):
     return model
 
 
-def monte_carlo(analysis, points, u_sys, trials=5000, seed=1, full_model=False, model_terms=()):
+def monte_carlo(analysis, points, u_sys, trials=5000, seed=1, full_model=False, model_terms=(), components=None):
     """JCGM 101 Monte Carlo. Systematic errors are drawn once per trial and shared by all points.
+
+    With `components` (from `systematic_uncertainties`), each instrument's
+    calibration error is drawn from its own distribution (rectangular for class
+    tolerances, normal for certificates) and summed per quantity; otherwise each
+    quantity's systematic error is normal with standard deviation `u_sys`.
 
     By default the engine model is linearised around each test point (its response to
     sub-kelvin perturbations is smooth), while the measurement equations stay fully
@@ -401,8 +473,13 @@ def monte_carlo(analysis, points, u_sys, trials=5000, seed=1, full_model=False, 
     rng = np.random.default_rng(seed)
     linear = None if full_model else _linearised_model(analysis, points)
     samples = {r: np.empty(trials) for r in RESULTS}
+    if components:
+        e_all = {q: sum(draw(rng, dist, u, trials) for _, u, dist in components[q]) if components[q]
+                 else np.zeros(trials) for q in QUANTITIES}
+    else:
+        e_all = {q: rng.normal(0, u_sys[q], trials) for q in QUANTITIES}
     for t in range(trials):
-        e_sys = {q: rng.normal(0, u_sys[q]) for q in QUANTITIES}
+        e_sys = {q: e_all[q][t] for q in QUANTITIES}
         xs = []
         for p in points:
             xs.append({q: p.values[q] - e_sys[q] - rng.normal(0, p.u_random[q]) for q in QUANTITIES})
@@ -460,30 +537,52 @@ class PassOffResult:
     checks: list
     analysis: PassOffAnalysis
     warnings: list = field(default_factory=list)
+    notes: list = field(default_factory=list)  # findings that do not invalidate the test
+    instruments: dict = field(default_factory=dict)
+    test_date: object = None
+    calibration: list = field(default_factory=list)  # instruments.calibration_status rows
+    corrections: dict = field(default_factory=dict)  # tag -> certificate correction applied
+    scatter: ProductionScatter | None = None
+    sys_components: dict = field(default_factory=dict)
 
     @property
     def valid(self):
         return not self.warnings
 
 
-def analyse(data, engine, instruments, guarantee=None, reference=None, limits=None, mc_trials=5000, seed=1,
-            scatter=None, speed_limit_band=0.3):
-    """Full pass-off chain: validate, average, correct, propagate uncertainty, check guarantees.
+RESULT_TAGS = set(SINGLE_TAGS) | set(AMBIENT_TAGS) | set(EXHAUST_TAGS)
 
+
+def analyse(data, engine, instruments, guarantee=None, reference=None, limits=None, mc_trials=5000, seed=1,
+            scatter=None, speed_limit_band=0.3, test_date=None, exhaust_model=None):
+    """Full pass-off chain: correct by certificates, validate, average, correct, propagate uncertainty, check.
+
+    `test_date` (datetime.date) is checked against each instrument's calibration
+    certificates: an out-of-date certificate is not used (class tolerance, no
+    correction) and is flagged. For a channel that feeds the corrected results
+    this makes the test invalid; for a diagnostic channel it is a note.
+    `scatter` should come from `gtperf.scatter.production_scatter`; without it the
+    placeholder ProductionScatter() is used and the report says so.
     `speed_limit_band` (% speed): a point whose measured gas generator speed is this
     close to the limit is treated as speed-controlled.
     """
     scatter = ProductionScatter() if scatter is None else scatter
-    report = validate(data, limits)
+    exhaust_model = exhaust_model or (limits.exhaust_model if limits else ExhaustProfileModel())
+    corrected, applied = apply_corrections(data, instruments, test_date)
+    report = validate(corrected, limits)
     points = average(report)
-    u_sys, detail = systematic_uncertainties(report, points, instruments)
     analysis = PassOffAnalysis(engine, reference)
+    load = float(np.mean([p.values["P_elec"] for p in points])) / 1e3 / analysis.ref["power_MW"]
+    u_sys, detail, comps = systematic_uncertainties(report, points, instruments, test_date, exhaust_model, load)
+    for p in points:  # expected rake-versus-mass-weighted-mean offset from the profile model
+        p.values["T_exh"] -= detail["T_exh profile correction"]
     unc = gum(analysis, points, u_sys, scatter)
     if mc_trials:
-        unc.mc = monte_carlo(analysis, points, u_sys, trials=mc_trials, seed=seed, model_terms=unc.model_terms)
+        unc.mc = monte_carlo(analysis, points, u_sys, trials=mc_trials, seed=seed, model_terms=unc.model_terms,
+                             components=comps)
     _, per_point = analysis.correct([p.values for p in points])
     checks = conformity(unc, guarantee or Guarantee())
-    warnings = []
+    warnings, notes = [], []
     max_speed = getattr(engine, "max_gg_speed", None)
     clean = report.clean
     for p in points:
@@ -499,4 +598,24 @@ def analyse(data, engine, instruments, guarantee=None, reference=None, limits=No
                             "retest at conditions in the same control mode.")
     if not report.stable:
         warnings.append("One or more test points did not meet the stability criteria.")
-    return PassOffResult(report, points, per_point, u_sys, detail, unc, checks, analysis, warnings)
+    calibration = calibration_status(instruments, test_date)
+    if test_date is None and calibration:
+        notes.append("No test date given: calibration certificates were used without checking their due dates.")
+    for row in calibration:
+        if row["valid"]:
+            continue
+        msg = (f"{row['tag']} ({row['component']}): certificate {row['certificate']} is {row['status']} "
+               f"(calibrated {row['date']}, due {row['due']}, test {test_date}). The class tolerance was used "
+               "instead and no certificate correction was applied.")
+        (warnings if row["tag"] in RESULT_TAGS else notes).append(
+            msg + ("" if row["tag"] in RESULT_TAGS else " Diagnostic channel only; results unaffected."))
+    if report.burner is not None and report.burner.flagged:
+        b = report.burner
+        warnings.append(f"Exhaust cold spot {b.depth:.0f} K below the rake median at about {b.angle_deg:.0f}° "
+                        f"(threshold {b.threshold:.0f} K), consistent with a lean or blocked burner "
+                        f"{b.burner}. Inspect the combustor; the exhaust profile model does not cover a "
+                        "faulty burner, so the exhaust temperature uncertainty is not valid.")
+    if scatter.source.startswith("assumed"):
+        notes.append("Correction-model scatter is the placeholder assumption, not estimated from production data.")
+    return PassOffResult(report, points, per_point, u_sys, detail, unc, checks, analysis, warnings, notes,
+                         instruments, test_date, calibration, applied, scatter, comps)
