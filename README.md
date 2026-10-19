@@ -2,7 +2,7 @@
 
 A Python toolkit for gas turbine performance: cycle modelling, site performance prediction, pass-off test validation and fleet trend analysis.
 
-**Status:** phases 1 to 4 of 6 done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics). Private, work in progress.
+**Status:** v1.0.0. Phases 1 to 5 of 6 done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics; tooling and reporting). Private.
 
 ## What phase 1 does
 
@@ -37,6 +37,15 @@ A Python toolkit for gas turbine performance: cycle modelling, site performance 
 - **Gas-path analysis.** An influence coefficient matrix taken from the engine model, weighted least-squares health estimation, fault fingerprints for components and sensors, sensor isolation by residual, and a nonlinear Gauss-Newton refit for large deviations.
 - **In-service fleet monitoring.** A synthetic fleet of 12 engines over 2 years, with compressor fouling and washes, wear, UK-like weather and five injected engine and instrument faults. Each snapshot is compared with the nominal model through a baseline lookup. Two physics-based detectors run on the results: a trend-compensated step detector with an exact chi-squared statistic, and an instrument consistency monitor. Thresholds are tuned on one fleet and scored on an unseen one, against a naive data-driven detector.
 
+## What phase 5 adds
+
+- **Excel site performance tool.** `gtperf excel` writes a workbook for a non-specialist: five site cases side by side, input range checks, every correction factor visible, and the results. It uses plain formulas over correction tables generated from the full model, so it needs no Python and no macros, and stays within 0.2 % of the full model. See [excel/README.md](excel/README.md).
+- **VBA module.** [excel/gtperf.bas](excel/gtperf.bas) adds worksheet functions (`GT_SITE`, `GT_ISA_PRESSURE` and others) and a `RunFullModel` macro that sends each case to the Python model.
+- **Automated checks.** Ruff lint, 80 tests with 95 % line and branch coverage (`make check`), and a GitHub Actions workflow ready for when the repository is published. The workbook formulas and the VBA functions are tested by recalculating and running them in headless LibreOffice.
+- **Technical report and slide deck**, kept as private documents outside the repository.
+
+![Excel site tool](docs/figures/excel_site_tool.png)
+
 ## Quick start
 
 ```bash
@@ -46,11 +55,12 @@ python examples/parametric_study.py           # regenerates docs/figures/
 gtperf calibrate examples/sgt400_13mw.toml
 gtperf site examples/sgt400_13mw.toml examples/site_hot_desert.toml
 gtperf curves examples/sgt400_13mw.toml > curves.csv
+gtperf excel examples/sgt400_13mw.toml site_tool.xlsx
 python examples/site_performance.py           # correction curves, site sheet
 python examples/passoff_test.py               # synthetic pass-off test and report
 python examples/coverage_study.py 100         # does U95 really cover 95 %?
 python examples/fleet_analysis.py             # production SPC and fleet monitoring (a few minutes)
-pytest
+make check                                    # lint, tests and coverage
 ```
 
 Example output for the illustrative 13 MW class engine at ISO conditions (15 °C, 1.01325 bar, 60 % RH):
@@ -174,6 +184,9 @@ The tests in `tests/` check:
 | Nonlinear GPA explains a large fault that linear GPA cannot | Engine model |
 | Baseline lookup matches the engine model to 0.05 % | Consistency |
 | Small fleet: step fault and sensor fault both detected and correctly isolated | Synthetic truth |
+| Excel correction method within 0.3 % of the full model, on and off the table grid | Full model |
+| Workbook formulas (recalculated in LibreOffice) and VBA functions (run in its VBA mode) match the Python mirror to 1e-9 | Consistency |
+| VBA site-file writer and CSV reader round-trip through the real CLI | Consistency |
 
 ## Limitations
 
@@ -194,7 +207,7 @@ The tests in `tests/` check:
 2. Off-design matching, site performance and calibration to a public datasheet (done)
 3. Pass-off test validation with measurement uncertainty (done)
 4. Fleet analytics: SPC, gas-path analysis and fault detection (done)
-5. Tooling and reporting: Excel/VBA front end, CI, technical report
+5. Tooling and reporting: Excel/VBA front end, CI, technical report and deck (done)
 6. Stretch: MATLAB port, two-spool aero cycle, requirements and certification note
 
 All data in this project is synthetic or from public sources.
