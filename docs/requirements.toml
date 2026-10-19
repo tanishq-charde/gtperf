@@ -1,0 +1,135 @@
+# Requirements traceability for the gtperf demonstration package.
+# Each requirement names its source, how it is verified (T test, A analysis, I inspection,
+# D demonstration) and the evidence. `tests` must name test functions that exist in tests/;
+# tests/test_requirements.py checks that, and that the table in
+# docs/requirements_and_certification.md matches this file.
+
+[[requirement]]
+id = "G-01"
+group = "Customer guarantee"
+text = "Net electrical output at ISO, corrected from a pass-off test, at least 12.65 MW"
+source = "Example contract guarantee for the SGT-400 13 MW package"
+method = "T"
+acceptance = "Corrected value above the limit with probability of conformance reported; tests in another control mode rejected"
+tests = ["test_conformity_verdicts", "test_result_within_uncertainty_of_truth", "test_speed_limited_test_is_flagged"]
+evidence = "docs/passoff/report.md: 12.724 ± 0.048 MW, PASS"
+
+[[requirement]]
+id = "G-02"
+group = "Customer guarantee"
+text = "Heat rate at ISO (LHV), corrected, at most 10,500 kJ/kWh"
+source = "Example contract guarantee"
+method = "T"
+acceptance = "As G-01"
+tests = ["test_conformity_verdicts", "test_tight_guarantee_fails"]
+evidence = "docs/passoff/report.md: 10,317 ± 57 kJ/kWh, PASS"
+
+[[requirement]]
+id = "G-03"
+group = "Customer guarantee"
+text = "Exhaust temperature at ISO, corrected, at most 570 °C (heat recovery boiler design limit)"
+source = "Example contract guarantee"
+method = "T"
+acceptance = "As G-01; exhaust rake profile under-sampling included in the uncertainty"
+tests = ["test_conformity_verdicts", "test_validation_catches_every_injected_fault"]
+evidence = "docs/passoff/report.md: 551.2 ± 1.9 °C, PASS"
+
+[[requirement]]
+id = "S-01"
+group = "Site rating"
+text = "Quoted site performance breaks into correction factors that reproduce the full model"
+source = "Proposals: a customer must see what each site feature costs"
+method = "T"
+acceptance = "Product of factors equals site / ISO to 1e-9; Excel tool within 0.3 % of the full model"
+tests = ["test_site_correction_factors_multiply_to_site_value", "test_correction_method_close_to_full_model", "test_formulas_and_vba_in_libreoffice"]
+evidence = "docs/site_hot_desert.md, excel/gtperf_site_tool.xlsx"
+
+[[requirement]]
+id = "M-01"
+group = "Measurement"
+text = "Expanded uncertainty (k = 2) of corrected output no more than 0.5 %, and honest"
+source = "Test code practice (ASME PTC 22 / ISO 2314 style)"
+method = "A"
+acceptance = "U95 at most 0.5 % of output; repeat-test coverage of the truth between 90 and 99 %"
+tests = ["test_gum_and_monte_carlo_agree", "test_result_within_uncertainty_of_truth"]
+evidence = "examples/coverage_study.py: U95 0.38 %, coverage 95.5 % for output"
+
+[[requirement]]
+id = "M-02"
+group = "Measurement"
+text = "Offset, drift, stuck and spiking sensors are excluded before averaging, with no false exclusions on clean data"
+source = "Instrumentation limits on production test beds"
+method = "T"
+acceptance = "Every injected fault caught; clean log raises no flag"
+tests = ["test_validation_catches_every_injected_fault", "test_clean_data_raises_no_flags"]
+evidence = "docs/passoff/report.md, section 3"
+
+[[requirement]]
+id = "P-01"
+group = "Model"
+text = "Gas properties agree with an independent reference implementation"
+source = "Model credibility"
+method = "T"
+acceptance = "cp, h and s within 1e-6 of Cantera with GRI-Mech 3.0"
+tests = ["test_matches_cantera_if_available", "test_dry_air_cp_matches_tables"]
+evidence = "tests/test_gas.py"
+
+[[requirement]]
+id = "P-02"
+group = "Model"
+text = "Model reproduces the public SGT-400 ISO rating and predicts the unfitted exhaust temperature"
+source = "Validation anchor"
+method = "T"
+acceptance = "Fitted values exact; exhaust temperature within 10 K"
+tests = ["test_calibration_hits_datasheet"]
+evidence = "README calibration table: 550.2 °C against 555 °C"
+
+[[requirement]]
+id = "P-03"
+group = "Model"
+text = "Energy and mass are conserved in every cycle"
+source = "First law"
+method = "T"
+acceptance = "Closure to 1e-9 at design and off-design, industrial and aero"
+tests = ["test_first_law_closes", "test_mass_and_energy_close_off_design", "test_first_law_closes_through_the_engine", "test_products_conserve_mass_and_atoms"]
+evidence = "tests/"
+
+[[requirement]]
+id = "P-04"
+group = "Model"
+text = "The MATLAB port gives the same answers as the Python package"
+source = "Toolchain portability (MATLAB named in the role)"
+method = "T"
+acceptance = "All reference values within 1e-8"
+tests = ["test_matlab_port_matches_python", "test_matlab_inputs_are_current"]
+evidence = "matlab/run_tests.m"
+
+[[requirement]]
+id = "A-01"
+group = "Aero cycle"
+text = "Turbofan design-point method matches the textbook constant-cp calculation and the ideal-cycle limit"
+source = "Model credibility for the aero cycle"
+method = "T"
+acceptance = "Thrust and TSFC within 1e-6 of the hand calculation; ideal efficiency 1 - 1/(tau_r tau_c) to 1e-6"
+tests = ["test_constant_cp_turbofan_matches_hand_calculation", "test_ideal_cycle_recovers_brayton_efficiency", "test_optimum_fan_pressure_ratio_sets_jet_velocity_ratio"]
+evidence = "tests/test_aero.py"
+
+[[requirement]]
+id = "F-01"
+group = "Fleet"
+text = "A turbine efficiency step of 1.5 points or an instrument offset is detected and correctly isolated within 60 days"
+source = "Fleet monitoring service level"
+method = "T"
+acceptance = "Detected, isolated to the right cause, delay under 60 days"
+tests = ["test_monitoring_detects_and_isolates"]
+evidence = "docs/fleet/report.md: 5 of 5 faults on the unseen fleet"
+
+[[requirement]]
+id = "F-02"
+group = "Fleet"
+text = "Nuisance alarms no more than 0.1 per engine-year"
+source = "Operator acceptance of the monitoring service"
+method = "A"
+acceptance = "Thresholds tuned on a training fleet, scored on an unseen fleet"
+tests = []
+evidence = "examples/fleet_analysis.py, docs/fleet/report.md: 0 false alarms in 24 engine-years"

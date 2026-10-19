@@ -1,8 +1,8 @@
 # gtperf
 
-A Python toolkit for gas turbine performance: cycle modelling, site performance prediction, pass-off test validation and fleet trend analysis.
+A Python toolkit for gas turbine performance: cycle modelling, site performance prediction, pass-off test validation and fleet trend analysis, for industrial and aero engines.
 
-**Status:** v1.0.0. Phases 1 to 5 of 6 done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics; tooling and reporting). Private.
+**Status:** v1.1.0. All six phases done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics; tooling and reporting; two-spool turbofan, MATLAB port and certification note). Private.
 
 ## What phase 1 does
 
@@ -46,6 +46,14 @@ A Python toolkit for gas turbine performance: cycle modelling, site performance 
 
 ![Excel site tool](docs/figures/excel_site_tool.png)
 
+## What phase 6 adds
+
+- **Two-spool turbofan design point.** Separate-exhaust turbofan with SAE station numbering, ISA atmosphere, a kerosene surrogate burned through the same real-gas property model, convergent nozzles that choke, and LP and HP spool power balances. `gtperf turbofan` reports thrust, TSFC, the thermal, propulsive and overall efficiencies and a station table, and sizes the engine to a thrust requirement. It is checked against the textbook constant-cp hand calculation to 1e-6, the ideal Brayton limit, first-law closure, and the classic optimum fan pressure ratio result V_bypass/V_core = ηfan·ηLPT.
+- **MATLAB port.** [matlab/](matlab/) holds the property model, fuels, components, the SGT-400 twin-shaft cycle and the turbofan as MATLAB functions. `make matlab` runs them in Octave against reference values written by the Python package; they agree to about 1e-11.
+- **Requirements and certification note.** [docs/requirements_and_certification.md](docs/requirements_and_certification.md) traces each guarantee and model requirement to its verification method and evidence, with a test that fails if the trace goes stale. It then sets out how emissions limits (Medium Combustion Plant Directive; ICAO Annex 16 LTO cycle) and Chapter 14 noise constrain the two cycles, with the bypass ratio trade computed from the model.
+
+![Turbofan trade](docs/figures/turbofan_trade.png)
+
 ## Quick start
 
 ```bash
@@ -60,6 +68,10 @@ python examples/site_performance.py           # correction curves, site sheet
 python examples/passoff_test.py               # synthetic pass-off test and report
 python examples/coverage_study.py 100         # does U95 really cover 95 %?
 python examples/fleet_analysis.py             # production SPC and fleet monitoring (a few minutes)
+gtperf turbofan examples/turbofan_cruise.toml # two-spool turbofan at cruise
+python examples/turbofan_study.py             # bypass ratio and fan pressure ratio trade
+make matlab                                   # MATLAB port, run in Octave against Python
+make requirements                             # regenerate the traceability table
 make check                                    # lint, tests and coverage
 ```
 
@@ -187,6 +199,14 @@ The tests in `tests/` check:
 | Excel correction method within 0.3 % of the full model, on and off the table grid | Full model |
 | Workbook formulas (recalculated in LibreOffice) and VBA functions (run in its VBA mode) match the Python mirror to 1e-9 | Consistency |
 | VBA site-file writer and CSV reader round-trip through the real CLI | Consistency |
+| Constant-cp turbofan matches the hand calculation to 1e-6, including a choked core nozzle | Textbook method (Saravanamuttoo, ch. 3) |
+| Lossless turbofan recovers 1 − 1/(τr·τc) at bypass ratios 0 and 5 | Analytical |
+| First law closes through the turbofan; nozzles conserve total enthalpy | Energy balance |
+| At the best fan pressure ratio, V_bypass/V_core = ηfan·ηLPT within 0.015 | Classic optimum (polytropic efficiencies) |
+| Higher bypass ratio gives lower TSFC and specific thrust | Physical behaviour |
+| ISA temperature and pressure at 0, 11 and 20 km | ISA tables |
+| MATLAB port matches the Python reference values to 1e-8 | Consistency |
+| Every test named in the requirements file exists, and the traceability table is current | Consistency |
 
 ## Limitations
 
@@ -200,6 +220,8 @@ The tests in `tests/` check:
 - The exhaust temperature profile in the synthetic data is a fixed pattern. Real profiles shift with load and combustor condition.
 - Compressor and turbine efficiency faults have nearly identical fingerprints with this measurement set, so isolating them leans heavily on T3.
 - Fleet monitoring uses base-load snapshots only; part-load data would need a load-dependent baseline.
+- The turbofan is a design-point model only: no component maps, off-design or transient behaviour, and a single cooling stream. Nozzles are convergent with a velocity-coefficient loss.
+- No NOx, CO or noise prediction. The certification note discusses those limits qualitatively and from the cycle trade.
 
 ## Roadmap
 
@@ -208,6 +230,6 @@ The tests in `tests/` check:
 3. Pass-off test validation with measurement uncertainty (done)
 4. Fleet analytics: SPC, gas-path analysis and fault detection (done)
 5. Tooling and reporting: Excel/VBA front end, CI, technical report and deck (done)
-6. Stretch: MATLAB port, two-spool aero cycle, requirements and certification note
+6. Stretch: MATLAB port, two-spool aero cycle, requirements and certification note (done)
 
 All data in this project is synthetic or from public sources.
