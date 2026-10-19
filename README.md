@@ -2,7 +2,7 @@
 
 A Python toolkit for gas turbine performance: cycle modelling, site performance prediction, pass-off test validation and fleet trend analysis, for industrial and aero engines.
 
-**Status:** v1.2.0. All six phases done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics; tooling and reporting; two-spool turbofan, MATLAB port and certification note), and v1.2 works through every limitation listed in v1.1 (see [What v1.2 adds](#what-v12-adds)). Private.
+**Status:** v1.2.0, plus the GTPerf GUI in beta ([GTPerf GUI](#gtperf-gui-beta-in-progress)). All six phases done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics; tooling and reporting; two-spool turbofan, MATLAB port and certification note), and v1.2 works through every limitation listed in v1.1 (see [What v1.2 adds](#what-v12-adds)). Private.
 
 ## What phase 1 does
 
@@ -70,6 +70,34 @@ v1.1 listed twelve limitations. Each one is now modelled, checked or measured, a
 - **Part-load fleet monitoring.** Cycling units follow a dispatch profile; part-load snapshots are compared with a baseline read at the measured output and analysed with a part-load influence matrix, with a power meter fingerprint for the setting. See section 2 of [docs/fleet/report.md](docs/fleet/report.md).
 - **Turbofan off-design and transients.** Fan, booster, HPC and turbine maps, working lines, thrust lapse with altitude and Mach number, thrust, N1, TET and fuel-flow settings, an idle to take-off acceleration with spool inertias, split cooling and a convergent-divergent nozzle option.
 - **Emissions and noise.** A DLE combustor model (Zeldovich NOx, CO burnout, air staging) calibrated to the SGT-400's published emissions, checked against the EU Medium Combustion Plant Directive across load; LTO-cycle NOx (Dp/Foo) for the turbofan against the CAEP/6 and CAEP/8 standards; and fan broadband (Heidmann) and jet mixing (Lighthill and von Glahn) source levels. See [docs/environment.md](docs/environment.md).
+
+## GTPerf GUI (beta, in progress)
+
+<img src="src/gtperf/app/assets/logo.png" alt="GTPerf" width="260">
+
+A point-and-click front end for the toolkit. Each study has its own page (Engine, Site performance, Part load & emissions, Pass-off test, Fleet monitoring, Turbofan), and the pages are linked: the engine you calibrate on the Engine page feeds site, part load, pass-off and fleet, and changing it marks their results as needing a recalculation. You enter values, press Calculate, and read the key results, charts and tables, with filters for which charts to show and which table columns and rows to see.
+
+Every result can be downloaded, per section or all together from Reports & downloads:
+
+| Format | Holds |
+|---|---|
+| SVG (zip) | every chart as a vector file |
+| XLSX | a summary sheet of inputs and key results, then one sheet per table |
+| PPTX | a cover, a key-results slide per section, a slide per chart and the main table |
+| PDF | inputs, key results, notes, charts and tables for each section |
+| CSV (zip) | every table |
+
+```bash
+pip install -e ".[gui]"
+gtperf gui            # opens http://localhost:8501
+```
+
+![Home page](docs/figures/gui_home.png)
+![Part load and emissions](docs/figures/gui_part_load.png)
+![Fleet monitoring](docs/figures/gui_fleet.png)
+![Reports and downloads](docs/figures/gui_reports.png)
+
+Beta: the calculations are the tested toolkit functions, but the interface is new. Still to do: saving and reopening a whole session, comparing two engines side by side, and the remaining ideas in the ideas list.
 
 ## Quick start
 
@@ -267,5 +295,6 @@ The v1.1 limitations are all addressed (see [What v1.2 adds](#what-v12-adds)). W
 5. Tooling and reporting: Excel/VBA front end, CI, technical report and deck (done)
 6. Stretch: MATLAB port, two-spool aero cycle, requirements and certification note (done)
 7. v1.2: real maps, part load, multi-point calibration, sourced uncertainties, fault isolation, part-load fleet monitoring, turbofan off-design, emissions and noise (done)
+8. GTPerf GUI: linked study pages with SVG, XLSX, PPTX and PDF downloads (beta, in progress)
 
 All data in this project is synthetic or from public sources.

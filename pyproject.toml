@@ -13,7 +13,8 @@ dependencies = ["numpy", "scipy", "pandas"]
 [project.optional-dependencies]
 plots = ["matplotlib"]  # also needed for pass-off report figures
 excel = ["openpyxl"]
-dev = ["pytest", "pytest-cov", "ruff", "matplotlib", "openpyxl", "cantera"]
+gui = ["streamlit>=1.40", "matplotlib", "openpyxl", "python-pptx", "fpdf2"]
+dev = ["pytest", "pytest-cov", "ruff", "matplotlib", "openpyxl", "cantera", "streamlit>=1.40", "python-pptx", "fpdf2"]
 
 [project.scripts]
 gtperf = "gtperf.cli:main"
@@ -25,6 +26,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 "gtperf.data" = ["*.toml"]
 "gtperf.data.maps" = ["*.json", "NOTICE"]
+"gtperf.app.assets" = ["*.png"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

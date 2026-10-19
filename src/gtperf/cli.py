@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import tomllib
+from pathlib import Path
 
 from .aero import Flight
 from .components import Combustor, Compressor, Turbine
@@ -57,11 +58,16 @@ def offdesign_options(cfg, pressure_ratio):
 
 def engine_from_datasheet(path):
     """Calibrate a twin-shaft model to a datasheet TOML file and build its off-design engine."""
+    with open(path, "rb") as f:
+        d = tomllib.load(f)
+    return engine_from_config(d)
+
+
+def engine_from_config(d):
+    """As engine_from_datasheet, from an already loaded datasheet dict."""
     from .calibrate import calibrate_twin_shaft
     from .offdesign import TwinShaftEngine
 
-    with open(path, "rb") as f:
-        d = tomllib.load(f)
     cal = calibrate_twin_shaft(
         d["electrical_power_MW"] * 1e6,
         d["heat_rate_kJ_per_kWh"],
@@ -166,12 +172,21 @@ def main(argv=None):
     fan.add_argument("--json", action="store_true", help="print the summary as JSON")
     fan.add_argument("--offdesign", action="store_true",
                      help="match the engine off design at the [offdesign] points (default: a few flight conditions)")
+    gui = sub.add_parser("gui", help="open the GTPerf graphical interface (beta) in a browser")
+    gui.add_argument("--port", type=int, default=8501)
     excel = sub.add_parser("excel", help="write the Excel site performance tool for a calibrated engine")
     excel.add_argument("datasheet")
     excel.add_argument("output", help="workbook to write, e.g. site_tool.xlsx")
     excel.add_argument("--gtperf-command", default="gtperf", help="how the workbook's RunFullModel macro calls gtperf")
     args = parser.parse_args(argv)
 
+    if args.command == "gui":
+        import subprocess
+        import sys
+
+        app = Path(__file__).resolve().parent / "app" / "ui.py"
+        return subprocess.call([sys.executable, "-m", "streamlit", "run", str(app), "--server.port", str(args.port),
+                                "--browser.gatherUsageStats", "false"])
     if args.command == "calibrate":
         d, c, _ = engine_from_datasheet(args.datasheet)
         print(f"{d.get('name', 'engine')}\n")
@@ -215,7 +230,6 @@ def main(argv=None):
             print(result)
         return
     if args.command == "excel":
-        from pathlib import Path
 
         from .excel import build_workbook
 
