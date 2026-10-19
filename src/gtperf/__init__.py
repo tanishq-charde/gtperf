@@ -1,8 +1,11 @@
 """gtperf: gas turbine performance toolkit."""
 
 from .components import Combustor, Compressor, Duct, FlowState, Turbine
-from .cycle import ISO, Ambient, CycleResult, SimpleCycle
+from .cycle import ISO, Ambient, CycleResult, SimpleCycle, TwinShaftCycle
 from .fuel import Fuel, PerfectFuel, methane, natural_gas
 from .gas import IdealGasMixture, PerfectGas, humid_air
+from .maps import CompressorMap, Health
+from .offdesign import SingleShaftEngine, TwinShaftEngine
+from .site import Site, correction_curves, site_performance
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

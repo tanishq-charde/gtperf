@@ -1,0 +1,19 @@
+# Published ISO datasheet values used to calibrate the twin-shaft model.
+# Source: Siemens Energy SGT-400 product page, simple-cycle power generation,
+# 13 MW version (retrieved 2026-10-19):
+# https://siemens-energy.com/us/en/home/products-services/product/sgt-400.html
+# ISO conditions: 15 C, 1.01325 bar, 60 % RH, no inlet or exhaust losses.
+name = "SGT-400 13 MW (public datasheet)"
+electrical_power_MW = 12.9
+heat_rate_kJ_per_kWh = 10294
+exhaust_flow_kg_s = 40.0
+exhaust_temperature_C = 555
+pressure_ratio = 17.1
+
+# Modelling assumptions (not from the datasheet)
+[assumptions]
+compressor_polytropic_eff = 0.89
+cooling_fraction = 0.15
+combustor_dp = 0.04
+mechanical_efficiency = 0.99
+generator_efficiency = 0.98

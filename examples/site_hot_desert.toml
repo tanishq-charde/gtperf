@@ -1,0 +1,11 @@
+# Example site: hot, dry, elevated, with a rich pipeline gas.
+name = "Hot desert site (example)"
+altitude_m = 500
+temperature_C = 40
+rh = 0.20
+inlet_loss_mbar = 10
+exhaust_loss_mbar = 25
+
+[fuel]
+name = "rich pipeline gas"
+mole_fractions = { CH4 = 0.85, C2H6 = 0.07, C3H8 = 0.02, CO2 = 0.03, N2 = 0.03 }

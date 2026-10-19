@@ -11,6 +11,38 @@ from .cycle import Ambient, SimpleCycle
 from .fuel import Fuel, natural_gas
 
 
+def _fuel(cfg):
+    return Fuel(cfg["mole_fractions"], cfg.get("name", "fuel")) if cfg else None
+
+
+def engine_from_datasheet(path):
+    """Calibrate a twin-shaft model to a datasheet TOML file and build its off-design engine."""
+    from .calibrate import calibrate_twin_shaft
+    from .offdesign import TwinShaftEngine
+
+    with open(path, "rb") as f:
+        d = tomllib.load(f)
+    cal = calibrate_twin_shaft(
+        d["electrical_power_MW"] * 1e6,
+        d["heat_rate_kJ_per_kWh"],
+        d["exhaust_flow_kg_s"],
+        d["pressure_ratio"],
+        exhaust_temp=d.get("exhaust_temperature_C"),
+        fuel=_fuel(d.get("fuel")),
+        **d.get("assumptions", {}),
+    )
+    return d, cal, TwinShaftEngine(cal.cycle, cal.air_flow)
+
+
+def site_from_config(path):
+    from .site import Site
+
+    with open(path, "rb") as f:
+        s = tomllib.load(f)
+    fuel = _fuel(s.pop("fuel", None))
+    return Site(fuel=fuel, **s)
+
+
 def cycle_from_config(cfg):
     fuel_cfg = cfg.get("fuel")
     fuel = Fuel(fuel_cfg["mole_fractions"], fuel_cfg.get("name", "fuel")) if fuel_cfg else natural_gas()
@@ -41,7 +73,49 @@ def main(argv=None):
     design = sub.add_parser("design", help="run a design-point cycle from a TOML file")
     design.add_argument("config")
     design.add_argument("--json", action="store_true", help="print the summary as JSON")
+    cal = sub.add_parser("calibrate", help="calibrate to a datasheet TOML and compare")
+    cal.add_argument("datasheet")
+    site = sub.add_parser("site", help="site performance sheet for a calibrated engine")
+    site.add_argument("datasheet")
+    site.add_argument("site")
+    site.add_argument("--csv", action="store_true", help="print the summary table as CSV")
+    curves = sub.add_parser("curves", help="ambient temperature correction curves as CSV")
+    curves.add_argument("datasheet")
+    curves.add_argument("--from-C", type=float, default=-20.0)
+    curves.add_argument("--to-C", type=float, default=45.0)
+    curves.add_argument("--step", type=float, default=5.0)
     args = parser.parse_args(argv)
+
+    if args.command == "calibrate":
+        d, c, _ = engine_from_datasheet(args.datasheet)
+        print(f"{d.get('name', 'engine')}\n")
+        print(c.table())
+        print(f"\nFitted: air flow {c.air_flow:.2f} kg/s, TIT {c.tit - 273.15:.1f} °C, "
+              f"turbine isentropic efficiency {c.turbine_efficiency:.4f}")
+        return
+    if args.command == "site":
+        from .site import site_performance
+
+        _, _, engine = engine_from_datasheet(args.datasheet)
+        perf = site_performance(engine, site_from_config(args.site))
+        print(perf.to_csv() if args.csv else perf.to_markdown())
+        return
+    if args.command == "curves":
+        import csv
+        import sys
+
+        from .site import correction_curves
+
+        _, _, engine = engine_from_datasheet(args.datasheet)
+        temps, t = [], args.from_C
+        while t <= args.to_C + 1e-9:
+            temps.append(t)
+            t += args.step
+        cc = correction_curves(engine, temps)
+        w = csv.writer(sys.stdout)
+        w.writerow(cc.keys())
+        w.writerows(zip(*cc.values()))
+        return
 
     with open(args.config, "rb") as f:
         cfg = tomllib.load(f)
