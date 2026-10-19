@@ -52,7 +52,7 @@ def test_products_conserve_mass_and_atoms():
     for element in ("C", "H", "O", "N"):
         from gtperf.gas import SPECIES
 
-        def atoms(mix, n):
+        def atoms(mix, n, element=element):
             return sum(x * n * SPECIES[k].atoms.get(element, 0) for k, x in mix.mole_fractions.items())
 
         before = atoms(AIR, 1 / AIR.mw) + atoms(fuel.mix, far / fuel.mw)

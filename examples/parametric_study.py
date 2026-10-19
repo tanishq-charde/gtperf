@@ -4,6 +4,7 @@ Run from the repository root:  python examples/parametric_study.py
 Writes PNGs to docs/figures/.
 """
 
+import tomllib
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -11,8 +12,6 @@ import numpy as np
 
 from gtperf.cli import cycle_from_config
 from gtperf.study import sweep
-
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 FIG = ROOT / "docs" / "figures"

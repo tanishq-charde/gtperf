@@ -130,7 +130,7 @@ def generate_test(
         ends = [engine.run(Ambient(t + 273.15, pt.p_amb_mbar * 100, pt.rh), **kw)
                 for t in (t_amb[0], t_amb[-1])]
 
-        def lerp(get):
+        def lerp(get, ends=ends, frac=frac):
             a, b = get(ends[0]), get(ends[1])
             return a + (b - a) * frac
 

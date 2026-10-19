@@ -5,21 +5,29 @@ Takes a few minutes (two fleets of full off-design runs). Writes data, figures
 and docs/fleet/report.md.
 """
 
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from parametric_study import BLUES, INK, INK2, ROOT, SURFACE  # shared figure style
 
 from gtperf import spc
 from gtperf.cli import engine_from_datasheet
 from gtperf.fleet import (
-    PASSOFF_NOISE, BaselineModel, FleetFault, default_fleet_faults, default_production_events, estimate_health,
-    in_service_fleet, make_gpa, monitor_fleet, naive_fleet_outliers, production_sequence, score,
+    PASSOFF_NOISE,
+    BaselineModel,
+    FleetFault,
+    default_fleet_faults,
+    default_production_events,
+    estimate_health,
+    in_service_fleet,
+    make_gpa,
+    monitor_fleet,
+    naive_fleet_outliers,
+    production_sequence,
+    score,
 )
 from gtperf.gpa import HEALTH, HEALTH_LABELS, MEASUREMENTS, GasPathAnalysis, influence_matrix
-
-from parametric_study import BLUES, INK, INK2, ROOT, SURFACE  # shared figure style
 
 OUT = ROOT / "docs" / "fleet"
 FIG = OUT / "figures"
@@ -213,7 +221,7 @@ def write_report(prod, train, test, naive):
     L += ["", "### Compared with a naive data-driven detector", "",
           "A Hotelling T² outlier test on each engine's rolling-mean deltas against the fleet's spread in the "
           "first 90 days has no physics and no knowledge of washes.", "",
-          f"| Detector | Faults detected | Can name the cause | False alarms per engine-year |",
+          "| Detector | Faults detected | Can name the cause | False alarms per engine-year |",
           "|---|---:|---|---:|",
           f"| Physics-based (step + consistency) | {int(sc_t['detected_day'].notna().sum())} / {len(sc_t)} | yes | "
           f"{far_t:.2f} |",

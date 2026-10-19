@@ -84,6 +84,10 @@ def main(argv=None):
     curves.add_argument("--from-C", type=float, default=-20.0)
     curves.add_argument("--to-C", type=float, default=45.0)
     curves.add_argument("--step", type=float, default=5.0)
+    excel = sub.add_parser("excel", help="write the Excel site performance tool for a calibrated engine")
+    excel.add_argument("datasheet")
+    excel.add_argument("output", help="workbook to write, e.g. site_tool.xlsx")
+    excel.add_argument("--gtperf-command", default="gtperf", help="how the workbook's RunFullModel macro calls gtperf")
     args = parser.parse_args(argv)
 
     if args.command == "calibrate":
@@ -99,6 +103,16 @@ def main(argv=None):
         _, _, engine = engine_from_datasheet(args.datasheet)
         perf = site_performance(engine, site_from_config(args.site))
         print(perf.to_csv() if args.csv else perf.to_markdown())
+        return
+    if args.command == "excel":
+        from pathlib import Path
+
+        from .excel import build_workbook
+
+        d, _, engine = engine_from_datasheet(args.datasheet)
+        build_workbook(engine, args.output, name=d.get("name", "engine"), source=d.get("source", ""),
+                       datasheet_path=Path(args.datasheet).resolve(), command=args.gtperf_command)
+        print(f"Wrote {args.output}")
         return
     if args.command == "curves":
         import csv

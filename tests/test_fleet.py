@@ -1,17 +1,29 @@
 import numpy as np
 import pytest
+from test_cli_and_study import DATASHEET
 
 from gtperf import Ambient, spc
 from gtperf.cli import engine_from_datasheet
 from gtperf.fleet import (
-    BaselineModel, FleetFault, fleet_deltas, in_service_fleet, make_gpa, monitor_fleet, production_sequence, score,
+    BaselineModel,
+    FleetFault,
+    fleet_deltas,
+    in_service_fleet,
+    make_gpa,
+    monitor_fleet,
+    production_sequence,
+    score,
 )
 from gtperf.gpa import (
-    HEALTH, MEASUREMENTS, GasPathAnalysis, deltas, health_from_vector, influence_matrix, measurement_vector,
+    HEALTH,
+    MEASUREMENTS,
+    GasPathAnalysis,
+    deltas,
+    health_from_vector,
+    influence_matrix,
+    measurement_vector,
     nonlinear_fit,
 )
-
-from test_cli_and_study import DATASHEET
 
 
 @pytest.fixture(scope="module")

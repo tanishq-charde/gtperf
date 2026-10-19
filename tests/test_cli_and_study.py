@@ -2,10 +2,10 @@ import json
 from pathlib import Path
 
 import numpy as np
+from test_cycle import make_cycle
 
 from gtperf.cli import main
 from gtperf.study import sweep
-from test_cycle import make_cycle
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "engine_13mw.toml"
 

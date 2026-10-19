@@ -133,7 +133,8 @@ def write_report(result, metadata, out_dir, truth=None, data=None):
         name, unit = RESULT_LABELS[c["result"]]
         nd = DECIMALS[c["result"]]
         L.append(f"| {name} ({unit}) | {_fmt(c['value'], nd)} | ±{_fmt(c['U95'], nd)} | {c['direction']} "
-                 f"{_fmt(c['limit'], nd)} | {_fmt(c['margin'], nd)} | {100 * c['probability']:.1f} % | {c['verdict']} |")
+                 f"{_fmt(c['limit'], nd)} | {_fmt(c['margin'], nd)} | {100 * c['probability']:.1f} % "
+                 f"| {c['verdict']} |")
     checked = {c["result"] for c in result.checks}
     for key in RESULTS:
         if key not in checked:

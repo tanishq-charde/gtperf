@@ -22,6 +22,7 @@ from .components import Compressor, FlowState, Turbine, mix
 from .cycle import ISO, CycleResult, SimpleCycle, TwinShaftCycle
 from .maps import NEW_AND_CLEAN, CompressorMap, ellipse_capacity, velocity_ratio_efficiency
 
+
 def _isentropic_drop(state, p_out):
     gas = state.gas
     t_s = gas.t_from_s(state.s, p_out, t_guess=state.t * (p_out / state.p) ** 0.25)

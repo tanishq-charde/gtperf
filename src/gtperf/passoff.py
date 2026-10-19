@@ -77,7 +77,7 @@ def validate(data, limits=None):
     tags = [c for c in df.columns if c not in ("time_s", "point")]
 
     for tag in tags:
-        for p, idx in df.groupby("point").groups.items():
+        for _, idx in df.groupby("point").groups.items():
             x = df.loc[idx, tag].to_numpy()
             if _max_identical_run(x) >= lim.stuck_samples:
                 excluded[tag] = f"stuck (no change for {lim.stuck_samples}+ samples)"
@@ -467,12 +467,13 @@ class PassOffResult:
 
 
 def analyse(data, engine, instruments, guarantee=None, reference=None, limits=None, mc_trials=5000, seed=1,
-            scatter=ProductionScatter(), speed_limit_band=0.3):
+            scatter=None, speed_limit_band=0.3):
     """Full pass-off chain: validate, average, correct, propagate uncertainty, check guarantees.
 
     `speed_limit_band` (% speed): a point whose measured gas generator speed is this
     close to the limit is treated as speed-controlled.
     """
+    scatter = ProductionScatter() if scatter is None else scatter
     report = validate(data, limits)
     points = average(report)
     u_sys, detail = systematic_uncertainties(report, points, instruments)

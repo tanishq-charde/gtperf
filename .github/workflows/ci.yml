@@ -1,0 +1,44 @@
+# Runs on every push and pull request once the repository is on GitHub.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install LibreOffice for the workbook and VBA tests
+        if: matrix.python-version == '3.12'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc python3-uno
+      - run: pip install -e ".[dev]"
+      - name: Tests with coverage
+        run: pytest --cov --cov-report=term --cov-report=xml
+      - name: Examples still run
+        run: |
+          python examples/site_performance.py
+          python -m gtperf.cli excel examples/sgt400_13mw.toml /tmp/site_tool.xlsx
+      - uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.12'
+        with:
+          name: coverage
+          path: coverage.xml

@@ -4,15 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gtperf"
-version = "0.4.0"
+version = "1.0.0"
 description = "Gas turbine performance toolkit: cycle modelling, site prediction, test validation and fleet analysis"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = ["numpy", "scipy", "pandas"]
 
 [project.optional-dependencies]
 plots = ["matplotlib"]  # also needed for pass-off report figures
-dev = ["pytest", "matplotlib", "cantera"]
+excel = ["openpyxl"]
+dev = ["pytest", "pytest-cov", "ruff", "matplotlib", "openpyxl", "cantera"]
 
 [project.scripts]
 gtperf = "gtperf.cli:main"
@@ -23,3 +24,25 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY"]
+ignore = [
+    "E741",  # single-letter names such as l follow the textbook notation
+    "B905",  # zip() over arrays built to the same length; strict= adds noise, not safety
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["gtperf"]
+
+[tool.coverage.run]
+source = ["gtperf"]
+branch = true
+
+[tool.coverage.report]
+show_missing = false
+skip_covered = true

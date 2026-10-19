@@ -9,4 +9,10 @@ from .offdesign import SingleShaftEngine, TwinShaftEngine
 from .passoff import Guarantee, analyse
 from .site import Site, correction_curves, site_performance
 
-__version__ = "0.4.0"
+__all__ = [
+    "ISO", "Ambient", "Combustor", "Compressor", "CompressorMap", "CycleResult", "Duct", "FlowState", "Fuel",
+    "Guarantee", "Health", "IdealGasMixture", "PerfectFuel", "PerfectGas", "SimpleCycle", "SingleShaftEngine", "Site",
+    "Turbine", "TwinShaftCycle", "TwinShaftEngine", "analyse", "correction_curves", "humid_air", "methane",
+    "natural_gas", "site_performance",
+]
+__version__ = "1.0.0"

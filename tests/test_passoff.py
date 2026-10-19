@@ -1,13 +1,12 @@
 import numpy as np
 import pytest
+from test_cli_and_study import DATASHEET
 
 from gtperf.cli import engine_from_datasheet
 from gtperf.maps import Health
 from gtperf.passoff import RESULTS, Guarantee, PassOffAnalysis, analyse, average, validate
 from gtperf.report import write_report
 from gtperf.synthetic import Fault, TestPoint, default_instruments, generate_test
-
-from test_cli_and_study import DATASHEET
 
 POINTS = [TestPoint(8.0, 1002.0, 0.78, 0.4), TestPoint(8.6, 1002.2, 0.76, 0.3)]
 

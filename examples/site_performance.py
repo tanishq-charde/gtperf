@@ -5,15 +5,13 @@ Writes docs/figures/correction_curves.png, docs/figures/site_factors.png and
 docs/site_hot_desert.md.
 """
 
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from parametric_study import BLUES, FIG, INK, INK2, ROOT  # shared figure style
 
 from gtperf.cli import engine_from_datasheet, site_from_config
 from gtperf.site import correction_curves, site_performance
-
-from parametric_study import BLUES, FIG, INK, INK2, ROOT, SURFACE  # shared figure style
 
 SPEED_SHADE = "#f0efec"
 
