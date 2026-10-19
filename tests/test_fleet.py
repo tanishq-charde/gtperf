@@ -161,3 +161,18 @@ def test_fleet_deltas_zero_for_nominal_engine(engine):
         rows.append({"t_amb": t, "p_amb": 1010.0, "rh": 0.7, **dict(zip(MEASUREMENTS, z))})
     dz = fleet_deltas(pd.DataFrame(rows), base)
     assert dz.abs().to_numpy().max() < 0.05
+
+
+def test_split_health_and_part_load_gpa():
+    from gtperf.gpa import EXTENDED_MEASUREMENTS, SPLIT_HEALTH, health_from_vector, influence_matrix
+
+    _, _, engine = engine_from_datasheet(DATASHEET)
+    h = health_from_vector([0, 0, -1, 0, 0], SPLIT_HEALTH)
+    assert h.hpt_eff_delta == -0.01 and h.pt_eff_delta == 0
+    H = influence_matrix(engine, measurements=EXTENDED_MEASUREMENTS, health=SPLIT_HEALTH)
+    assert H.shape == (8, 5)
+    hpt, pt = H[:, 2], H[:, 4]
+    assert hpt[6] < 0 and abs(hpt[6]) > abs(pt[6])  # better HPT -> cooler T45; PT barely moves it
+    power = 0.6 * engine.run().electrical_power
+    Hp = influence_matrix(engine, health=SPLIT_HEALTH, power=power)
+    assert np.allclose(Hp[0], 0, atol=1e-6)  # output is the setting at part load

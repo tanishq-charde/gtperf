@@ -317,7 +317,7 @@ class TwinShaftEngine(_Engine):
 
         dh = _isentropic_drop(s41, p45)
         eff = self.hpt_eff_design * velocity_ratio_efficiency(gg_speed / math.sqrt(dh / self.hpt_dh_design))
-        s44, hpt_power = Turbine(eff + health.turbine_eff_delta).run(s41, p45)
+        s44, hpt_power = Turbine(eff + health.turbine_eff_delta + health.hpt_eff_delta).run(s41, p45)
         s45 = mix(mix(s44, rotor), pt)
 
         exhaust = None
@@ -325,7 +325,7 @@ class TwinShaftEngine(_Engine):
             p5 = self._exhaust_pressure(ambient, exhaust_loss, exhaust)
             dh = _isentropic_drop(s45, p5)
             eff = self.pt_eff_design * velocity_ratio_efficiency(1.0 / math.sqrt(dh / self.pt_dh_design))
-            s49, pt_power = Turbine(eff + health.turbine_eff_delta).run(s45, p5)
+            s49, pt_power = Turbine(eff + health.turbine_eff_delta + health.pt_eff_delta).run(s45, p5)
             exhaust = mix(s49, handling)
 
         residuals = [

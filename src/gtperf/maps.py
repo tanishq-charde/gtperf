@@ -289,13 +289,16 @@ class Health:
     """Component health deltas, used for degradation and gas-path studies.
 
     flow_scale multiplies compressor corrected flow (fouling < 1). The efficiency
-    deltas are added to isentropic efficiencies (e.g. -0.01 for one point).
+    deltas are added to isentropic efficiencies (e.g. -0.01 for one point). On a twin-shaft
+    engine `turbine_eff_delta` applies to both turbines and the hpt/pt deltas to one each.
     """
 
     compressor_flow_scale: float = 1.0
     compressor_eff_delta: float = 0.0
     turbine_eff_delta: float = 0.0
     turbine_capacity_scale: float = 1.0
+    hpt_eff_delta: float = 0.0  # twin shaft: HP turbine only, on top of turbine_eff_delta
+    pt_eff_delta: float = 0.0  # twin shaft: power turbine only, on top of turbine_eff_delta
 
 
 NEW_AND_CLEAN = Health()
