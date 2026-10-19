@@ -8,6 +8,7 @@ combination of sections into SVG, Excel, PowerPoint, PDF and CSV files.
 from __future__ import annotations
 
 import json
+import sys
 import tomllib
 
 import pandas as pd
@@ -94,6 +95,9 @@ with st.sidebar:
     st.divider()
     st.caption("✓ calculated · ⚠ engine changed since, recalculate")
     st.caption("All results are model estimates from public data and synthetic tests.")
+    if sys.platform == "emscripten":  # running in the browser from the portfolio site
+        st.caption("Running in your browser: the longer studies take a little more time than on a PC.")
+        st.markdown("[← Back to the project page](../#p/gtperf)")
 
 
 # --- shared result display -----------------------------------------------------------------------------
