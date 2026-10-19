@@ -67,6 +67,20 @@ def cycle_from_config(cfg):
     return cycle, ambient
 
 
+def turbofan_from_config(cfg):
+    from .aero import Flight, Turbofan
+
+    c, e, loss = cfg["cycle"], cfg.get("efficiency", {}), cfg.get("losses", {})
+    kw = {k: e[n] for k, n in (("fan_eff", "fan"), ("booster_eff", "booster"), ("hpc_eff", "hpc"),
+                               ("hpt_eff", "hpt"), ("lpt_eff", "lpt")) if n in e}
+    kw.update({k: v for k, v in loss.items() if k != "hp_offtake_kW"})
+    if "hp_offtake_kW" in loss:
+        kw["hp_offtake"] = loss["hp_offtake_kW"] * 1e3
+    engine = Turbofan(bpr=c["bpr"], fan_pr=c["fan_pr"], fan_core_pr=c.get("fan_core_pr"), hpc_pr=c["hpc_pr"],
+                      tet=c["tet_K"], **kw)
+    return engine, Flight(**cfg.get("flight", {}))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="gtperf", description="Gas turbine performance toolkit")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -84,6 +98,9 @@ def main(argv=None):
     curves.add_argument("--from-C", type=float, default=-20.0)
     curves.add_argument("--to-C", type=float, default=45.0)
     curves.add_argument("--step", type=float, default=5.0)
+    fan = sub.add_parser("turbofan", help="two-spool turbofan design point from a TOML file")
+    fan.add_argument("config")
+    fan.add_argument("--json", action="store_true", help="print the summary as JSON")
     excel = sub.add_parser("excel", help="write the Excel site performance tool for a calibrated engine")
     excel.add_argument("datasheet")
     excel.add_argument("output", help="workbook to write, e.g. site_tool.xlsx")
@@ -103,6 +120,18 @@ def main(argv=None):
         _, _, engine = engine_from_datasheet(args.datasheet)
         perf = site_performance(engine, site_from_config(args.site))
         print(perf.to_csv() if args.csv else perf.to_markdown())
+        return
+    if args.command == "turbofan":
+        with open(args.config, "rb") as f:
+            cfg = tomllib.load(f)
+        engine, flight = turbofan_from_config(cfg)
+        w = cfg.get("air_flow_kg_s") or engine.size_for_thrust(cfg["net_thrust_kN"] * 1e3, flight)
+        result = engine.run(w, flight)
+        if args.json:
+            print(json.dumps(result.summary(), indent=2))
+        else:
+            print(f"{cfg.get('name', 'turbofan')}\n")
+            print(result)
         return
     if args.command == "excel":
         from pathlib import Path

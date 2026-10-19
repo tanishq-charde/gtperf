@@ -1,0 +1,29 @@
+# Illustrative two-spool, separate-exhaust turbofan sized for top-of-climb-like cruise thrust.
+# Representative of a modern short-haul high-bypass engine; not a model of any specific product.
+name = "Two-spool turbofan, cruise design point (illustrative)"
+net_thrust_kN = 22.0          # or give air_flow_kg_s
+
+[flight]
+altitude_m = 10668            # 35,000 ft
+mach = 0.78
+isa_dt = 0.0
+
+[cycle]
+bpr = 10.0
+fan_pr = 1.50                 # bypass stream
+fan_core_pr = 2.40            # fan root plus booster
+hpc_pr = 17.0
+tet_K = 1600.0
+
+[efficiency]                  # polytropic for compressors, isentropic for turbines
+fan = 0.91
+booster = 0.90
+hpc = 0.90
+hpt = 0.89
+lpt = 0.91
+
+[losses]
+intake_recovery = 0.995
+combustor_dp = 0.04
+cooling_fraction = 0.10
+hp_offtake_kW = 150.0
