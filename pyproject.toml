@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gtperf"
-version = "0.2.0"
+version = "0.3.0"
 description = "Gas turbine performance toolkit: cycle modelling, site prediction, test validation and fleet analysis"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["numpy", "scipy"]
+dependencies = ["numpy", "scipy", "pandas"]
 
 [project.optional-dependencies]
-plots = ["matplotlib"]
+plots = ["matplotlib"]  # also needed for pass-off report figures
 dev = ["pytest", "matplotlib", "cantera"]
 
 [project.scripts]

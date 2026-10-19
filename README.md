@@ -2,7 +2,7 @@
 
 A Python toolkit for gas turbine performance: cycle modelling, site performance prediction, pass-off test validation and fleet trend analysis.
 
-**Status:** phases 1 and 2 of 6 done (design-point cycle; off-design and site performance). Private, work in progress.
+**Status:** phases 1 to 3 of 6 done (design-point cycle; off-design and site performance; pass-off test validation). Private, work in progress.
 
 ## What phase 1 does
 
@@ -22,6 +22,15 @@ A Python toolkit for gas turbine performance: cycle modelling, site performance 
 - **Site performance prediction.** ISA altitude, ambient temperature, humidity, inlet and exhaust losses, fuel composition and component degradation, with the change from ISO broken into correction factors that multiply exactly to the site value. Output as a markdown or CSV performance sheet.
 - **Correction curves** across ambient temperature, plus a `Health` object (compressor flow and efficiency, turbine efficiency and capacity) that phases 3 and 4 build on.
 
+## What phase 3 adds
+
+- **Synthetic test-bed data.** A production engine with hidden build-to-build health deltas is "tested" at whatever the weather is on the day. A representative instrument set (redundant inlet RTDs, 12 exhaust thermocouples, Coriolis fuel flow, gas chromatograph LHV, power metering, barometer, humidity, inlet and exhaust pressure losses) logs at 1 Hz. Every sensor gets a hidden calibration bias and noise, and faults can be injected: offset, drift, stuck and spikes.
+- **Data validation.** Spike removal (rolling median and MAD), stuck-sensor detection, redundant-sensor disagreement, exhaust thermocouple deviation and drift checks against the rest of the rake, and stability criteria on 1-minute averages.
+- **Correction to reference conditions** by the model-ratio method used in performance test codes (ASME PTC 22 / ISO 2314 style). Exhaust flow is derived from a heat balance, since it cannot be measured directly.
+- **Measurement uncertainty.** GUM first-order propagation with numerical sensitivities through the whole correction chain, plus a JCGM 101 Monte Carlo. Calibration errors are shared by all test points and random errors are independent per point, with an autocorrelation-corrected standard error. The budget also includes exhaust profile under-sampling when thermocouples are excluded, and correction-model uncertainty from production scatter.
+- **Acceptance** against guarantee limits with guarded-band verdicts and probability of conformance. A test point is flagged as not valid when the engine ran in a different control mode from the reference (detected from measured gas generator speed).
+- **Auto-generated test report** in markdown with figures.
+
 ## Quick start
 
 ```bash
@@ -32,6 +41,8 @@ gtperf calibrate examples/sgt400_13mw.toml
 gtperf site examples/sgt400_13mw.toml examples/site_hot_desert.toml
 gtperf curves examples/sgt400_13mw.toml > curves.csv
 python examples/site_performance.py           # correction curves, site sheet
+python examples/passoff_test.py               # synthetic pass-off test and report
+python examples/coverage_study.py 100         # does U95 really cover 95 %?
 pytest
 ```
 
@@ -90,6 +101,27 @@ Output falls by about 0.9 % per kelvin above ISO, while heat rate and exhaust te
 
 The full sheet for this example site is in [docs/site_hot_desert.md](docs/site_hot_desert.md).
 
+### Pass-off test example
+
+[docs/passoff/report.md](docs/passoff/report.md) is the generated report for engine ESN-0412. It was tested on an 8 to 9 °C day with four injected sensor faults, and the raw log is alongside it. Validation catches all four faults, and the engine passes all three limits. Because the data is synthetic, the report ends by comparing the corrected results with the hidden truth: every result lands within its U95.
+
+![Uncertainty budget](docs/passoff/figures/uncertainty_budget.png)
+
+### Does the stated uncertainty mean what it says?
+
+`examples/coverage_study.py` repeats the test 100 times with fresh biases, noise, engine health and weather, and counts how often the truth falls inside the 95 % interval.
+
+The first version covered only 80 % for corrected power. The cause was the correction itself, not the instruments. The correction curves describe the nominal engine, but every production engine responds slightly differently to ambient conditions. The error was worst on cold days, when a slightly different engine hits the gas generator speed limit at a different temperature. Two fixes followed: a correction-model uncertainty term driven by production scatter, and a check that refuses tests run in a different control mode from the reference. With those in place:
+
+| Result | Coverage of U95 (valid tests) | Std of normalised error |
+|---|---:|---:|
+| Corrected power | 95.5 % | 0.92 |
+| Corrected heat rate | 98.9 % | 0.96 |
+| Corrected exhaust temperature | 94.4 % | 1.07 |
+| Corrected exhaust flow | 97.8 % | 0.99 |
+
+89 of the 100 tests were valid; 11 were flagged for running on the speed limit.
+
 ## Verification
 
 The tests in `tests/` check:
@@ -110,6 +142,11 @@ The tests in `tests/` check:
 | Hot day: lower output and flow, higher heat rate and exhaust temperature, less surge margin | Physical behaviour |
 | Site correction factors multiply exactly to the site/ISO ratio | Consistency |
 | Calibration hits datasheet targets; exhaust temperature within 10 K | SGT-400 datasheet |
+| With perfect instruments, the correction returns the model reference values | Consistency |
+| Validation catches every injected fault and raises no flags on clean data | Synthetic faults |
+| Corrected results fall within U95 of the hidden truth | Synthetic truth |
+| GUM and Monte Carlo standard uncertainties agree within 15 % | JCGM 100 / 101 |
+| Speed-limited cold-day test is flagged as not valid | Control-mode check |
 
 ## Limitations
 
@@ -119,12 +156,14 @@ The tests in `tests/` check:
 - Inlet and exhaust losses are fixed at the quoted values rather than scaling with flow squared.
 - The twin-shaft humidity effect (about +5 % output from dry to saturated at 40 °C) comes from the gas generator speeding up with more water vapour in the gas. It has not been checked against OEM humidity curves.
 - Part load, generator capability limits and other derates are not modelled yet.
+- Pass-off instrument uncertainties and production scatter are representative assumptions. A real test would take them from calibration certificates and fleet build data.
+- The exhaust temperature profile in the synthetic data is a fixed pattern. Real profiles shift with load and combustor condition.
 
 ## Roadmap
 
 1. Design-point cycle (done)
 2. Off-design matching, site performance and calibration to a public datasheet (done)
-3. Pass-off test validation: correction to reference conditions (ASME PTC 22 / ISO 2314 approach) and measurement uncertainty (GUM, Monte Carlo)
+3. Pass-off test validation with measurement uncertainty (done)
 4. Fleet analytics: SPC charts, gas-path fault isolation, anomaly detection on a synthetic fleet
 5. Tooling and reporting: Excel/VBA front end, CI, technical report
 6. Stretch: MATLAB port, two-spool aero cycle, requirements and certification note

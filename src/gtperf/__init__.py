@@ -6,6 +6,7 @@ from .fuel import Fuel, PerfectFuel, methane, natural_gas
 from .gas import IdealGasMixture, PerfectGas, humid_air
 from .maps import CompressorMap, Health
 from .offdesign import SingleShaftEngine, TwinShaftEngine
+from .passoff import Guarantee, analyse
 from .site import Site, correction_curves, site_performance
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
