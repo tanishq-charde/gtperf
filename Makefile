@@ -1,5 +1,5 @@
 # Same checks as .github/workflows/ci.yml, for running before a commit.
-.PHONY: check lint test coverage examples excel
+.PHONY: check lint test coverage examples excel matlab
 
 check: lint coverage
 
@@ -18,3 +18,7 @@ examples:
 
 excel:
 	python3 -m gtperf.cli excel examples/sgt400_13mw.toml excel/gtperf_site_tool.xlsx
+
+matlab:
+	python3 matlab/make_reference.py
+	cd matlab && octave --no-gui --quiet --eval run_tests

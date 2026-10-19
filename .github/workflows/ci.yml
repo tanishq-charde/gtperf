@@ -27,9 +27,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install LibreOffice for the workbook and VBA tests
+      - name: Install LibreOffice and Octave for the workbook, VBA and MATLAB tests
         if: matrix.python-version == '3.12'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc python3-uno
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc python3-uno octave
       - run: pip install -e ".[dev]"
       - name: Tests with coverage
         run: pytest --cov --cov-report=term --cov-report=xml
