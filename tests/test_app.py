@@ -1,6 +1,8 @@
 """GUI calculation layer and exports (the Streamlit page itself is smoke-tested when streamlit is installed)."""
 
 import io
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -68,10 +70,16 @@ def test_exports_are_valid_files(sections):
 
 
 def test_app_pages_run_without_errors():
-    testing = pytest.importorskip("streamlit.testing.v1")
+    # In a separate process: Streamlit's test runner leaves state that stops LibreOffice's UNO bridge starting.
+    pytest.importorskip("streamlit.testing.v1")
     app = Path(core.__file__).with_name("ui.py")
-    at = testing.AppTest.from_file(str(app), default_timeout=300).run()
-    assert not at.exception
-    for page in ["Engine", "Site performance", "Reports & downloads"]:
-        at.sidebar.radio[0].set_value(page).run()
-        assert not at.exception, page
+    script = f"""
+from streamlit.testing.v1 import AppTest
+at = AppTest.from_file({str(app)!r}, default_timeout=300).run()
+assert not at.exception, at.exception
+for page in ["Engine", "Site performance", "Reports & downloads"]:
+    at.sidebar.radio[0].set_value(page).run()
+    assert not at.exception, (page, at.exception)
+"""
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=600)
+    assert done.returncode == 0, done.stderr[-2000:]
