@@ -1,0 +1,30 @@
+# Generic 13 MW class single-shaft industrial gas turbine at ISO conditions.
+# Illustrative inputs only, not the data of any real engine. Phase 2 calibrates
+# against published datasheet values.
+name = "Generic 13 MW industrial GT (illustrative)"
+air_flow_kg_s = 39.0
+mechanical_efficiency = 0.99
+generator_efficiency = 0.985
+
+[ambient]
+temperature_C = 15.0
+pressure_bar = 1.01325
+rh = 0.60
+
+[compressor]
+pressure_ratio = 16.8
+efficiency = 0.90      # polytropic
+polytropic = true
+
+[combustor]
+exit_temperature_C = 1250.0
+pressure_loss = 0.04
+efficiency = 0.995
+
+[turbine]
+efficiency = 0.89      # isentropic
+cooling_fraction = 0.15
+
+[installation]
+inlet_loss_mbar = 0.0
+exhaust_loss_mbar = 0.0

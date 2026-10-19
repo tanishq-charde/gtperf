@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gtperf"
+version = "0.1.0"
+description = "Gas turbine performance toolkit: cycle modelling, site prediction, test validation and fleet analysis"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy"]
+
+[project.optional-dependencies]
+plots = ["matplotlib"]
+dev = ["pytest", "matplotlib", "cantera"]
+
+[project.scripts]
+gtperf = "gtperf.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
