@@ -347,8 +347,10 @@ def monitor_fleet(engine, data, washes, baseline=None, gpa=None, step_threshold=
     """
     baseline = baseline or BaselineModel(engine)
     gpa = gpa or make_gpa(engine)
-    max_speed = getattr(engine, "max_gg_speed", np.inf)
-    excluded = data["n_gg"] >= max_speed - speed_band
+    if hasattr(engine, "speed_limited"):
+        excluded = engine.speed_limited(data["n_gg"].to_numpy(), data["t_amb"].to_numpy() + 273.15, speed_band)
+    else:
+        excluded = np.zeros(len(data), bool)
     d = data[~excluded]
     dz = fleet_deltas(d, baseline)
     cov = ambient_noise_covariance(baseline, u_t_amb)

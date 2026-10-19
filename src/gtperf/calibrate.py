@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from scipy.optimize import root
 
 from .components import Combustor, Compressor, Turbine
-from .cycle import ISO, TwinShaftCycle
+from .cycle import ISO, Cooling, TwinShaftCycle
 from .fuel import natural_gas
 
 
@@ -33,12 +33,13 @@ def calibrate_twin_shaft(
     pressure_ratio,
     exhaust_temp=None,
     compressor_polytropic_eff=0.89,
-    cooling_fraction=0.15,
+    cooling_fraction=None,
     combustor_dp=0.04,
     mechanical_efficiency=0.99,
     generator_efficiency=0.98,
     fuel=None,
     ambient=ISO,
+    cooling=None,
 ):
     """Find air flow, TIT and turbine efficiency that reproduce power (W), heat rate (kJ/kWh) and exhaust flow (kg/s).
 
@@ -47,6 +48,12 @@ def calibrate_twin_shaft(
     given, is then a check on the result rather than an input.
     """
     fuel = fuel or natural_gas()
+    if isinstance(cooling, dict):
+        cooling = Cooling(**cooling)
+    if cooling is None:
+        cooling = Cooling(ngv=0.15 if cooling_fraction is None else cooling_fraction)
+    elif cooling_fraction is not None:
+        raise ValueError("give either cooling or cooling_fraction, not both")
 
     def build(tit, eta_t):
         return TwinShaftCycle(
@@ -54,7 +61,7 @@ def calibrate_twin_shaft(
             Combustor(fuel, tit, dp_frac=combustor_dp),
             Turbine(eta_t),
             Turbine(eta_t),
-            cooling_fraction=cooling_fraction,
+            cooling=cooling,
             mechanical_efficiency=mechanical_efficiency,
             generator_efficiency=generator_efficiency,
         )

@@ -73,8 +73,8 @@ Public Function GT_SITE(ByVal quantity As String, ByVal temperature_C As Double,
     Dim delta As Double, drh As Double, din As Double, dex As Double
     delta = GT_ISA_PRESSURE(altitude_m) / P_ISO
     drh = rh_pct / 100 - RH_REF
-    din = inlet_loss_mbar / delta
-    dex = exhaust_loss_mbar / delta
+    din = inlet_loss_mbar   ' losses are at rated flow and scale with dynamic head: no altitude correction
+    dex = exhaust_loss_mbar
     Dim q As String
     q = LCase(Trim(quantity))
     Select Case q

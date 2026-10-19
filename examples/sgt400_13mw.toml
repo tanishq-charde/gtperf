@@ -13,7 +13,33 @@ pressure_ratio = 17.1
 # Modelling assumptions (not from the datasheet)
 [assumptions]
 compressor_polytropic_eff = 0.89
-cooling_fraction = 0.15
 combustor_dp = 0.04
 mechanical_efficiency = 0.99
 generator_efficiency = 0.98
+
+# Cooling and sealing air, fractions of compressor inlet flow (15 % in all):
+# NGV air from delivery mixes before the first rotor; HP rotor air from delivery rejoins after the
+# HP turbine; power turbine air comes from an interstage port at PR**0.6.
+[assumptions.cooling]
+ngv = 0.07
+rotor = 0.05
+pt = 0.03
+port = 0.6
+
+# Off-design model (not from the datasheet). The compressor map is the public NPSS HPC map
+# (src/gtperf/data/maps/NOTICE) scaled to this engine's pressure ratio.
+[offdesign]
+compressor_map = "hpc"
+
+[offdesign.limits]
+gg_speed = 1.03             # mechanical speed limit, relative to design
+gg_corrected_speed = 1.03   # aerodynamic limit for the front stages on a cold day
+
+[offdesign.limits.generator]  # air-cooled generator, illustrative rating
+rating_MVA = 20.0
+power_factor = 0.8
+derate = [[-20.0, 1.08], [15.0, 1.0], [40.0, 0.93], [50.0, 0.89]]  # capability vs ambient, deg C
+
+[offdesign.controls]
+vigv = [[0.85, -35.0], [0.95, 0.0]]   # VIGV angle (deg) vs gas generator corrected speed
+bleed = [[0.88, 0.05], [0.91, 0.0]]   # handling bleed to exhaust vs corrected speed

@@ -15,6 +15,45 @@ def _fuel(cfg):
     return Fuel(cfg["mole_fractions"], cfg.get("name", "fuel")) if cfg else None
 
 
+def _assumptions(d):
+    from .cycle import Cooling
+
+    a = dict(d.get("assumptions", {}))
+    if isinstance(a.get("cooling"), dict):
+        a["cooling"] = Cooling(**a["cooling"])
+    return a
+
+
+def offdesign_options(cfg, pressure_ratio):
+    """Compressor map, limits and variable-geometry controls from an [offdesign] TOML table."""
+    from .maps import CompressorMap, TabulatedCompressorMap
+    from .offdesign import Controls, Generator, Limits, Schedule
+
+    cfg = cfg or {}
+    name = cfg.get("compressor_map", "hpc")
+    cmap = (CompressorMap(pressure_ratio) if name == "analytic"
+            else TabulatedCompressorMap.load(name, pressure_ratio, design_beta=cfg.get("map_design_beta")))
+    lim = dict(cfg.get("limits", {}))
+    kw = {}
+    for key, scale, name_ in (("tit_C", None, "tit"), ("exhaust_temp_C", None, "exhaust_temp"),
+                              ("pt_inlet_temp_C", None, "pt_inlet_temp"), ("shaft_power_MW", 1e6, "shaft_power")):
+        if key in lim:
+            kw[name_] = lim.pop(key) * scale if scale else lim.pop(key) + 273.15
+    gen = lim.pop("generator", None)
+    if gen:
+        kw["generator"] = Generator(gen["rating_MVA"], gen.get("power_factor", 0.85),
+                                    Schedule(tuple(map(tuple, gen["derate"]))) if "derate" in gen
+                                    else Generator.__dataclass_fields__["derate"].default)
+    limits = Limits(**kw, **lim)
+    ctl = dict(cfg.get("controls", {}))
+    for key in ("vigv", "bleed"):
+        if key in ctl:
+            ctl[key] = Schedule(tuple(map(tuple, ctl[key])))
+    if "exhaust_temp_set_C" in ctl:
+        ctl["exhaust_temp_set"] = ctl.pop("exhaust_temp_set_C") + 273.15
+    return cmap, limits, Controls(**ctl)
+
+
 def engine_from_datasheet(path):
     """Calibrate a twin-shaft model to a datasheet TOML file and build its off-design engine."""
     from .calibrate import calibrate_twin_shaft
@@ -29,9 +68,10 @@ def engine_from_datasheet(path):
         d["pressure_ratio"],
         exhaust_temp=d.get("exhaust_temperature_C"),
         fuel=_fuel(d.get("fuel")),
-        **d.get("assumptions", {}),
+        **_assumptions(d),
     )
-    return d, cal, TwinShaftEngine(cal.cycle, cal.air_flow)
+    cmap, limits, controls = offdesign_options(d.get("offdesign"), d["pressure_ratio"])
+    return d, cal, TwinShaftEngine(cal.cycle, cal.air_flow, compressor_map=cmap, limits=limits, controls=controls)
 
 
 def site_from_config(path):

@@ -45,7 +45,7 @@ def rows_by_label(path):
 def test_tables_reproduce_iso_and_show_speed_limit(tables):
     i = tables["temperature_C"].index(15)
     assert tables["t_power"][i] == pytest.approx(1.0, abs=1e-6)
-    assert tables["control"][0] == "gas generator speed" and tables["control"][-1] == "temperature"
+    assert tables["control"][0] == "gas generator corrected speed" and tables["control"][-1] == "temperature"
     assert all(k < 0 for k in tables["inlet_power"]) and all(k > 0 for k in tables["inlet_heat_rate"])
 
 

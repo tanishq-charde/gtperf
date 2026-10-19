@@ -12,8 +12,10 @@ Corrections are applied in the same order as `site_performance`:
     inlet loss  ->  exhaust loss  ->  degradation
 
 Humidity and the two losses are linear sensitivities tabulated against ambient
-temperature; a pressure loss is divided by delta because its effect scales with
-the loss as a fraction of ambient pressure. `evaluate` mirrors the spreadsheet
+temperature. A loss is entered at the engine's rated flow; the model scales it
+with dynamic head, which at altitude falls in proportion to ambient pressure, so
+its effect, which depends on the loss as a fraction of ambient pressure, needs
+no altitude correction. `evaluate` mirrors the spreadsheet
 formulas exactly, so the formula approximation can be checked against the full
 model without opening Excel.
 """
@@ -83,13 +85,15 @@ def correction_tables(engine, temperatures=T_GRID):
     for t in temperatures:
         base = run(t, RH_REF)
         b = _quantities(base)
-        dry, wet = _quantities(run(t, 0.0)), _quantities(run(t, 1.0))
+        # humidity slope from dry air to the reference humidity: a hot, humid day can reach the gas generator
+        # speed limit, so a dry-to-saturated chord would misstate the effect at ordinary humidities
+        dry = _quantities(run(t, 0.0))
         inl = _quantities(run(t, RH_REF, inlet=INLET_STEP))
         exh = _quantities(run(t, RH_REF, exhaust=EXHAUST_STEP))
         rel = [b[0] / iso[0], b[1] / iso[1], b[2] / iso[2], b[3] - iso[3]]
         for q, v in zip(OUTPUTS, rel):
             tab[f"t_{q}"].append(float(v))
-        for prefix, other, scale in (("rh", wet, 1.0), ("inlet", inl, INLET_STEP), ("exhaust", exh, EXHAUST_STEP)):
+        for prefix, other, scale in (("rh", b, RH_REF), ("inlet", inl, INLET_STEP), ("exhaust", exh, EXHAUST_STEP)):
             low = dry if prefix == "rh" else b
             sens = [(other[k] - low[k]) / b[k] / scale for k in range(3)] + [(other[3] - low[3]) / scale]
             for q, v in zip(OUTPUTS, sens):
@@ -114,7 +118,7 @@ def evaluate(tab, case):
          and k != "temperature_C"}
     delta = isa_pressure(case.altitude_m) / ISO.p
     drh = case.rh - RH_REF
-    din, dex = case.inlet_loss_mbar / delta, case.exhaust_loss_mbar / delta
+    din, dex = case.inlet_loss_mbar, case.exhaust_loss_mbar
     iso = tab["iso"]
     out = {}
     for q, base, alt in (("power", iso["power_MW"], delta), ("heat_rate", iso["heat_rate"], 1.0),
@@ -289,10 +293,10 @@ def build_workbook(engine, path, name="engine", cases=DEFAULT_CASES, tables=None
             put(f"Humidity, {label}", "-",
                 [f"=1+{g('rh_' + q, j)}*({x('rh', j)}/100-{RH_REF})" for j in range(ncase)], "0.0000"),
             put(f"Inlet loss, {label}", "-",
-                [f"=1+{g('inlet_' + q, j)}*{x('inlet_loss_mbar', j)}/{ref(d_row, j)}" for j in range(ncase)],
+                [f"=1+{g('inlet_' + q, j)}*{x('inlet_loss_mbar', j)}" for j in range(ncase)],
                 "0.0000"),
             put(f"Exhaust loss, {label}", "-",
-                [f"=1+{g('exhaust_' + q, j)}*{x('exhaust_loss_mbar', j)}/{ref(d_row, j)}" for j in range(ncase)],
+                [f"=1+{g('exhaust_' + q, j)}*{x('exhaust_loss_mbar', j)}" for j in range(ncase)],
                 "0.0000"),
         ]
     fac["power"].append(put("Degradation factor, output", "-",
@@ -317,8 +321,8 @@ def build_workbook(engine, path, name="engine", cases=DEFAULT_CASES, tables=None
     res["exhaust_temp"] = put(
         "Exhaust temperature", "°C",
         [f"=ISO_EXHAUST_TEMP_C+{g('t_exhaust_temp', j)}+{g('rh_exhaust_temp', j)}*({x('rh', j)}/100-{RH_REF})"
-         f"+{g('inlet_exhaust_temp', j)}*{x('inlet_loss_mbar', j)}/{ref(d_row, j)}"
-         f"+{g('exhaust_exhaust_temp', j)}*{x('exhaust_loss_mbar', j)}/{ref(d_row, j)}" for j in range(ncase)],
+         f"+{g('inlet_exhaust_temp', j)}*{x('inlet_loss_mbar', j)}"
+         f"+{g('exhaust_exhaust_temp', j)}*{x('exhaust_loss_mbar', j)}" for j in range(ncase)],
         "0.0")
     row += 1
     ws.cell(row, 2, "Fuel composition changes and part load need the full model (gtperf site, or the "
@@ -374,8 +378,8 @@ def build_workbook(engine, path, name="engine", cases=DEFAULT_CASES, tables=None
         ("  rh_*, inlet_*, exhaust_*: linear sensitivities to humidity and to inlet and exhaust pressure loss.", None),
         ("Altitude is applied as the ISA pressure ratio delta (output and flow scale with delta, heat rate and "
          "exhaust temperature do not), which is exact for dry air by similarity.", None),
-        ("Losses are divided by delta because their effect depends on the loss as a fraction of ambient pressure.",
-         None),
+        ("Losses are entered at rated flow. The model scales them with dynamic head, which falls with ambient "
+         "pressure at altitude, so they need no altitude correction.", None),
         ("Effects are applied in a fixed order and multiplied, matching gtperf.site.site_performance.", None),
         ("", None),
         ("Limits", bold),
