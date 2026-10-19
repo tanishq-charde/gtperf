@@ -590,7 +590,11 @@ def analyse(data, engine, instruments, guarantee=None, reference=None, limits=No
         if max_speed and "N_gg" in clean:
             # the measured gas generator speed shows the control mode the real engine was in
             n_gg = clean.loc[clean["point"] == p.point, "N_gg"].mean()
-            if n_gg >= 100 * max_speed - speed_limit_band:
+            if hasattr(engine, "speed_limited"):  # mechanical and corrected speed limits
+                t_inlet = p.values["T_amb"] + 273.15
+                if engine.speed_limited(n_gg / 100, t_inlet, speed_limit_band / 100):
+                    mode = "gas generator speed"
+            elif n_gg >= 100 * max_speed - speed_limit_band:
                 mode = "gas generator speed"
         if mode != analysis.ref["control"]:
             warnings.append(f"Point {p.point} runs on the {mode} limit but the reference condition is on the "
