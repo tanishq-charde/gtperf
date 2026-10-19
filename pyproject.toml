@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gtperf"
-version = "0.3.0"
+version = "0.4.0"
 description = "Gas turbine performance toolkit: cycle modelling, site prediction, test validation and fleet analysis"
 readme = "README.md"
 requires-python = ">=3.10"

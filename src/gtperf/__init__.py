@@ -9,4 +9,4 @@ from .offdesign import SingleShaftEngine, TwinShaftEngine
 from .passoff import Guarantee, analyse
 from .site import Site, correction_curves, site_performance
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

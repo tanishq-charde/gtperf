@@ -2,7 +2,7 @@
 
 A Python toolkit for gas turbine performance: cycle modelling, site performance prediction, pass-off test validation and fleet trend analysis.
 
-**Status:** phases 1 to 3 of 6 done (design-point cycle; off-design and site performance; pass-off test validation). Private, work in progress.
+**Status:** phases 1 to 4 of 6 done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics). Private, work in progress.
 
 ## What phase 1 does
 
@@ -31,6 +31,12 @@ A Python toolkit for gas turbine performance: cycle modelling, site performance 
 - **Acceptance** against guarantee limits with guarded-band verdicts and probability of conformance. A test point is flagged as not valid when the engine ran in a different control mode from the reference (detected from measured gas generator speed).
 - **Auto-generated test report** in markdown with figures.
 
+## What phase 4 adds
+
+- **Production SPC.** 200 synthetic pass-off results in build order with hidden events: a damaged engine, a test-bed metering error and a supplier change. The toolkit runs individuals, EWMA and CUSUM charts, Western Electric rules, a robust Phase I and Cpk against the acceptance limit.
+- **Gas-path analysis.** An influence coefficient matrix taken from the engine model, weighted least-squares health estimation, fault fingerprints for components and sensors, sensor isolation by residual, and a nonlinear Gauss-Newton refit for large deviations.
+- **In-service fleet monitoring.** A synthetic fleet of 12 engines over 2 years, with compressor fouling and washes, wear, UK-like weather and five injected engine and instrument faults. Each snapshot is compared with the nominal model through a baseline lookup. Two physics-based detectors run on the results: a trend-compensated step detector with an exact chi-squared statistic, and an instrument consistency monitor. Thresholds are tuned on one fleet and scored on an unseen one, against a naive data-driven detector.
+
 ## Quick start
 
 ```bash
@@ -43,6 +49,7 @@ gtperf curves examples/sgt400_13mw.toml > curves.csv
 python examples/site_performance.py           # correction curves, site sheet
 python examples/passoff_test.py               # synthetic pass-off test and report
 python examples/coverage_study.py 100         # does U95 really cover 95 %?
+python examples/fleet_analysis.py             # production SPC and fleet monitoring (a few minutes)
 pytest
 ```
 
@@ -122,6 +129,21 @@ The first version covered only 80 % for corrected power. The cause was the corre
 
 89 of the 100 tests were valid; 11 were flagged for running on the speed limit.
 
+### Fleet analytics results
+
+Full write-up: [docs/fleet/report.md](docs/fleet/report.md).
+
+- **Production.** The CUSUM chart flags the supplier change 6 builds after it happens and EWMA after 7, while the Shewhart chart needs 28. Gas-path analysis of the shift points to compressor efficiency, which is the true cause. Cpk against the acceptance limit falls from 1.51 to 1.03.
+- **In service (unseen test fleet).** All 5 faults are detected and all 5 correctly named: turbine blade damage, nozzle erosion, inlet filter failure, a drifting exhaust thermocouple and a fuel meter error. There are no false alarms in 24 engine-years. The naive detector also finds the faults, but it cannot name them and raises 0.75 nuisance alarms per engine-year.
+
+![Engine trends](docs/fleet/figures/engine_trends.png)
+
+Getting there took three fixes, each found by looking at false alarms:
+
+1. Compressor washes had to be modelled as steps in each engine's trend.
+2. The test statistic had to use the true prediction variance of the trend fit and the correlated error from the ambient temperature sensor.
+3. Large genuine faults had to be refitted with the nonlinear model before being blamed on an instrument.
+
 ## Verification
 
 The tests in `tests/` check:
@@ -147,6 +169,11 @@ The tests in `tests/` check:
 | Corrected results fall within U95 of the hidden truth | Synthetic truth |
 | GUM and Monte Carlo standard uncertainties agree within 15 % | JCGM 100 / 101 |
 | Speed-limited cold-day test is flagged as not valid | Control-mode check |
+| CUSUM and EWMA detect a 1-sigma shift sooner than Shewhart | SPC theory |
+| Linear GPA recovers health exactly from linear deltas; isolates a sensor bias | Consistency |
+| Nonlinear GPA explains a large fault that linear GPA cannot | Engine model |
+| Baseline lookup matches the engine model to 0.05 % | Consistency |
+| Small fleet: step fault and sensor fault both detected and correctly isolated | Synthetic truth |
 
 ## Limitations
 
@@ -158,13 +185,15 @@ The tests in `tests/` check:
 - Part load, generator capability limits and other derates are not modelled yet.
 - Pass-off instrument uncertainties and production scatter are representative assumptions. A real test would take them from calibration certificates and fleet build data.
 - The exhaust temperature profile in the synthetic data is a fixed pattern. Real profiles shift with load and combustor condition.
+- Compressor and turbine efficiency faults have nearly identical fingerprints with this measurement set, so isolating them leans heavily on T3.
+- Fleet monitoring uses base-load snapshots only; part-load data would need a load-dependent baseline.
 
 ## Roadmap
 
 1. Design-point cycle (done)
 2. Off-design matching, site performance and calibration to a public datasheet (done)
 3. Pass-off test validation with measurement uncertainty (done)
-4. Fleet analytics: SPC charts, gas-path fault isolation, anomaly detection on a synthetic fleet
+4. Fleet analytics: SPC, gas-path analysis and fault detection (done)
 5. Tooling and reporting: Excel/VBA front end, CI, technical report
 6. Stretch: MATLAB port, two-spool aero cycle, requirements and certification note
 
