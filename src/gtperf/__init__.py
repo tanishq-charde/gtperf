@@ -1,4 +1,4 @@
-"""gtperf: gas turbine performance toolkit."""
+"""gtperf: gas turbine design and performance research tool."""
 
 from .components import Combustor, Compressor, Duct, FlowState, Turbine
 from .cycle import ISO, Ambient, CycleResult, SimpleCycle, TwinShaftCycle

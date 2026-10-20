@@ -1,12 +1,27 @@
 # gtperf
 
-A Python toolkit for gas turbine performance: cycle modelling, site performance prediction, pass-off test validation and fleet trend analysis, for industrial and aero engines.
+<img src="src/gtperf/app/assets/logo.png" alt="GTPerf" width="260">
 
-**Status:** v1.3.0. All six phases are done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics; tooling and reporting; two-spool turbofan, MATLAB port and certification note). v1.2 worked through every limitation listed in v1.1 ([What v1.2 adds](#what-v12-adds)), and v1.3 adds design mode with calculated component maps and the [GTPerf web tool](#gtperf-web-tool) ([What v1.3 adds](#what-v13-adds)).
+**GTPerf is an open design and research tool for gas turbine performance.** It builds an engine from its cycle and blade-stage choices, calculates its own compressor and turbine maps, and follows each choice through to site rating, part load, emissions, acceptance testing and in-service monitoring. It is meant to help engineers, students and researchers see why a design performs as it does, compare options quickly and build on the models for their own work.
 
-**Try it:** [tanishq-charde.github.io/gtperf-app](https://tanishq-charde.github.io/gtperf-app/) runs the whole package in your browser. The [user manual](docs/GTPerf_User_Manual.pdf) explains every page.
+**Try it:** [tanishq-charde.github.io/gtperf-app](https://tanishq-charde.github.io/gtperf-app/) runs the whole package in your browser, with nothing to install. The [user manual](docs/GTPerf_User_Manual.pdf) explains every study with worked examples.
 
-## What phase 1 does
+**Status:** v1.3.0, in beta. The models are tested (153 tests) and checked against public data; the interface is still being refined.
+
+## What it is for
+
+- **Exploring a design.** Change one input, such as turbine inlet temperature, pressure ratio, stage loading or the vane schedule, and see its effect on output, efficiency, surge margin, emissions and limits across the operating range.
+- **Understanding trade-offs.** The maps are calculated from the stage design, so choices that leave the rating unchanged but move the engine closer to surge, or change how it behaves on a hot day, show up directly.
+- **Learning and teaching.** Every result is calculated, not looked up, and each study explains its method, so the tool can be used to learn how gas turbine performance work is done.
+- **Building on it.** The models are plain, documented Python. They can be scripted, extended or replaced: a new component model, a different map method, another engine layout or real test data.
+
+The inputs start at values that reproduce the published Siemens Energy SGT-400 13 MW rating, so the baseline can be checked against a real engine before it is changed. Every test and fleet dataset is synthetic, with the true answer hidden, so each analysis method can be scored against the truth.
+
+## Development history
+
+The toolkit was built in phases; the sections below record what each one added.
+
+### What phase 1 does
 
 - **Real-gas properties.** Humid air and combustion products as ideal-gas mixtures, using NASA 7-coefficient polynomials (GRI-Mech 3.0 data). Enthalpies include heats of formation, so fuel LHV and the combustor energy balance come out of the same property model. Checked against Cantera to 1 part in a million.
 - **Fuels.** Gaseous hydrocarbon blends (CH4, C2H6, C3H8 with CO2/N2 inerts), complete combustion, LHV and stoichiometric fuel-air ratio computed from composition.
@@ -15,7 +30,7 @@ A Python toolkit for gas turbine performance: cycle modelling, site performance 
 - **Parametric studies** over pressure ratio and firing temperature.
 - **CLI** driven by a TOML engine definition.
 
-## What phase 2 adds
+### What phase 2 adds
 
 - **Twin-shaft cycle** (gas generator plus free power turbine), the layout of most small industrial engines, alongside the single-shaft cycle.
 - **Off-design matching.** A generic analytic compressor map (speed lines from surge to choke, efficiency fall-off with speed and incidence), Stodola ellipse-law turbine flow capacity, and turbine efficiency against blade-speed ratio. A Newton solver finds the point where compressor flow, both turbine capacities and the gas generator power balance agree. Corrected flow and speed use full γRT similarity, so humidity and fuel changes are handled consistently.
@@ -24,7 +39,7 @@ A Python toolkit for gas turbine performance: cycle modelling, site performance 
 - **Site performance prediction.** ISA altitude, ambient temperature, humidity, inlet and exhaust losses, fuel composition and component degradation, with the change from ISO broken into correction factors that multiply exactly to the site value. Output as a markdown or CSV performance sheet.
 - **Correction curves** across ambient temperature, plus a `Health` object (compressor flow and efficiency, turbine efficiency and capacity) that phases 3 and 4 build on.
 
-## What phase 3 adds
+### What phase 3 adds
 
 - **Synthetic test-bed data.** A production engine with hidden build-to-build health deltas is "tested" at whatever the weather is on the day. A representative instrument set (redundant inlet RTDs, 12 exhaust thermocouples, Coriolis fuel flow, gas chromatograph LHV, power metering, barometer, humidity, inlet and exhaust pressure losses) logs at 1 Hz. Every sensor gets a hidden calibration bias and noise, and faults can be injected: offset, drift, stuck and spikes.
 - **Data validation.** Spike removal (rolling median and MAD), stuck-sensor detection, redundant-sensor disagreement, exhaust thermocouple deviation and drift checks against the rest of the rake, and stability criteria on 1-minute averages.
@@ -33,13 +48,13 @@ A Python toolkit for gas turbine performance: cycle modelling, site performance 
 - **Acceptance** against guarantee limits with guarded-band verdicts and probability of conformance. A test point is flagged as not valid when the engine ran in a different control mode from the reference (detected from measured gas generator speed).
 - **Auto-generated test report** in markdown with figures.
 
-## What phase 4 adds
+### What phase 4 adds
 
 - **Production SPC.** 200 synthetic pass-off results in build order with hidden events: a damaged engine, a test-bed metering error and a supplier change. The toolkit runs individuals, EWMA and CUSUM charts, Western Electric rules, a robust Phase I and Cpk against the acceptance limit.
 - **Gas-path analysis.** An influence coefficient matrix taken from the engine model, weighted least-squares health estimation, fault fingerprints for components and sensors, sensor isolation by residual, and a nonlinear Gauss-Newton refit for large deviations.
 - **In-service fleet monitoring.** A synthetic fleet of 12 engines over 2 years, with compressor fouling and washes, wear, UK-like weather and five injected engine and instrument faults. Each snapshot is compared with the nominal model through a baseline lookup. Two physics-based detectors run on the results: a trend-compensated step detector with an exact chi-squared statistic, and an instrument consistency monitor. Thresholds are tuned on one fleet and scored on an unseen one, against a naive data-driven detector.
 
-## What phase 5 adds
+### What phase 5 adds
 
 - **Excel site performance tool.** `gtperf excel` writes a workbook for a non-specialist: five site cases side by side, input range checks, every correction factor visible, and the results. It uses plain formulas over correction tables generated from the full model, so it needs no Python and no macros, and stays within 0.2 % of the full model. See [excel/README.md](excel/README.md).
 - **VBA module.** [excel/gtperf.bas](excel/gtperf.bas) adds worksheet functions (`GT_SITE`, `GT_ISA_PRESSURE` and others) and a `RunFullModel` macro that sends each case to the Python model.
@@ -48,7 +63,7 @@ A Python toolkit for gas turbine performance: cycle modelling, site performance 
 
 ![Excel site tool](docs/figures/excel_site_tool.png)
 
-## What phase 6 adds
+### What phase 6 adds
 
 - **Two-spool turbofan design point.** Separate-exhaust turbofan with SAE station numbering, ISA atmosphere, a kerosene surrogate burned through the same real-gas property model, convergent nozzles that choke, and LP and HP spool power balances. `gtperf turbofan` reports thrust, TSFC, the thermal, propulsive and overall efficiencies and a station table, and sizes the engine to a thrust requirement. It is checked against the textbook constant-cp hand calculation to 1e-6, the ideal Brayton limit, first-law closure, and the classic optimum fan pressure ratio result V_bypass/V_core = ηfan·ηLPT.
 - **MATLAB port.** [matlab/](matlab/) holds the property model, fuels, components, the SGT-400 twin-shaft cycle and the turbofan as MATLAB functions. `make matlab` runs them in Octave against reference values written by the Python package; they agree to about 1e-11.
@@ -56,7 +71,7 @@ A Python toolkit for gas turbine performance: cycle modelling, site performance 
 
 ![Turbofan trade](docs/figures/turbofan_trade.png)
 
-## What v1.2 adds
+### What v1.2 adds
 
 v1.1 listed twelve limitations. Each one is now modelled, checked or measured, and what remains is stated in [Limitations](#limitations).
 
@@ -73,7 +88,7 @@ v1.1 listed twelve limitations. Each one is now modelled, checked or measured, a
 - **Turbofan off-design and transients.** Fan, booster, HPC and turbine maps, working lines, thrust lapse with altitude and Mach number, thrust, N1, TET and fuel-flow settings, an idle to take-off acceleration with spool inertias, split cooling and a convergent-divergent nozzle option.
 - **Emissions and noise.** A DLE combustor model (Zeldovich NOx, CO burnout, air staging) calibrated to the SGT-400's published emissions, checked against the EU Medium Combustion Plant Directive across load; LTO-cycle NOx (Dp/Foo) for the turbofan against the CAEP/6 and CAEP/8 standards; and fan broadband (Heidmann) and jet mixing (Lighthill and von Glahn) source levels. See [docs/environment.md](docs/environment.md).
 
-## What v1.3 adds
+### What v1.3 adds
 
 - **Design mode.** An engine is built forwards from its design values (air flow, pressure ratio, TIT, component efficiencies, cooling flows, shaft and generator limits) instead of being fitted to a datasheet. The starting values reproduce the published SGT-400 13 MW rating (12.89 MW and 10,299 kJ/kWh against 12.9 MW and 10,294 kJ/kWh), and any of them can be changed.
 - **Maps calculated by stage stacking.** [mapgen.py](src/gtperf/mapgen.py) generates the compressor and turbine maps from blade-stage inputs instead of scaling a stored map. The design work is divided over the stages; stage loading ψ and flow coefficient φ fix each stage's blade speed and velocity triangles; blade angles and annulus areas are then frozen. Off design each stage is solved in turn with incidence losses. A compressor row stalls at a set Lieblein diffusion factor, the surge line is the peak pressure rise or rear-stage stall, and the variable vane schedule is part of the map. A turbine row chokes at its peak mass flux, and a row whose design exit is supersonic is sized as just choked. The twin shaft and all five turbofan components (fan, booster, HPC, HPT, LPT) run on these maps.
@@ -82,8 +97,6 @@ v1.1 listed twelve limitations. Each one is now modelled, checked or measured, a
 - **The GTPerf web tool** replaces the Streamlit interface and its PDF, PowerPoint and Excel exports.
 
 ## GTPerf web tool
-
-<img src="src/gtperf/app/assets/logo.png" alt="GTPerf" width="260">
 
 **[Open the tool](https://tanishq-charde.github.io/gtperf-app/)** · [User manual (PDF)](docs/GTPerf_User_Manual.pdf)
 
