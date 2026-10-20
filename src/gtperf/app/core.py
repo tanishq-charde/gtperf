@@ -286,15 +286,16 @@ def design_section(model):
         ("Specific power", f"{iso.electrical_power / 1e3 / d['air_flow_kg_s']:.0f} kJ/kg"),
         ("Surge margin at ISO", f"{100 * iso.info['surge_margin']:.1f} %"),
     ]
+    gas_path = _gas_path_label(engine)
     fig, (ax1, ax2) = figure(10, 3.8, 2)
     s = stations[stations["Station"] != "0"]
     x = np.arange(len(s))
     ax1.plot(x, s["Temperature (°C)"], "o-", color=NAVY)
     ax1.set_xticks(x, s["Station"])
-    style(ax1, "Gas-path temperature at ISO", "Station", "Temperature (°C)")
+    style(ax1, f"Gas-path temperature at ISO\n{gas_path}", "Station", "Temperature (°C)")
     ax2.plot(x, s["Pressure (bar)"], "o-", color=BLUE)
     ax2.set_xticks(x, s["Station"])
-    style(ax2, "Gas-path pressure at ISO", "Station", "Pressure (bar)")
+    style(ax2, f"Gas-path pressure at ISO\n{gas_path}", "Station", "Pressure (bar)")
     return Section(
         "engine",
         "Engine design",
@@ -322,6 +323,12 @@ STATION_NAMES = {
     "45": "PT inlet",
     "5": "Exhaust",
 }
+
+
+def _gas_path_label(engine):
+    c = engine.cycle
+    return (f"PR {c.compressor.pressure_ratio:.3g}, TIT {c.combustor.t_out - 273.15:.0f} °C, "
+            f"air flow {engine.design.stations['2'].w:.4g} kg/s")
 
 
 def station_table(result):
@@ -370,15 +377,16 @@ def engine_section(model):
         ("ISO thermal efficiency", f"{100 * iso.thermal_efficiency:.1f} %"),
         ("Surge margin at ISO", f"{100 * iso.info['surge_margin']:.1f} %"),
     ]
+    gas_path = _gas_path_label(engine)
     fig, (ax1, ax2) = figure(10, 3.8, 2)
     s = stations[stations["Station"] != "0"]
     x = np.arange(len(s))
     ax1.plot(x, s["Temperature (°C)"], "o-", color=NAVY)
     ax1.set_xticks(x, s["Station"])
-    style(ax1, "Gas-path temperature at ISO", "Station", "Temperature (°C)")
+    style(ax1, f"Gas-path temperature at ISO\n{gas_path}", "Station", "Temperature (°C)")
     ax2.plot(x, s["Pressure (bar)"], "o-", color=BLUE)
     ax2.set_xticks(x, s["Station"])
-    style(ax2, "Gas-path pressure at ISO", "Station", "Pressure (bar)")
+    style(ax2, f"Gas-path pressure at ISO\n{gas_path}", "Station", "Pressure (bar)")
     return Section(
         "engine",
         "Engine and calibration",
@@ -463,7 +471,8 @@ def site_section(model, site, health=NEW_AND_CLEAN, curve_range=(-20.0, 45.0), c
         )
     lo = min(min(vals), 0)
     ax.set_xlim(lo * 1.1 - 0.5, max(max(vals), 0) + max(2.5, 0.25 * abs(lo)))
-    style(ax, "What moves output from ISO to site", "Change in output (%)")
+    style(ax, f"What moves output from ISO to site\n{site.name}: {site.temperature_C:g} °C, {site.altitude_m:g} m, "
+             f"{100 * site.rh:.0f} % RH", "Change in output (%)")
     ax.grid(axis="y", visible=False)
 
     outputs = curve_outputs or ["Output / ISO", "Heat rate / ISO", "Exhaust flow / ISO"]
@@ -474,7 +483,8 @@ def site_section(model, site, health=NEW_AND_CLEAN, curve_range=(-20.0, 45.0), c
     for t in curves.loc[limited, "Ambient (°C)"]:
         ax.axvspan(t - 1.25, t + 1.25, color=AMBER, alpha=0.12, lw=0)
     ax.axvline(site.temperature_C, color=RED, lw=1, ls="--", label="site")
-    style(ax, "Correction curves (shaded: speed or generator limited)", "Ambient temperature (°C)", "Value")
+    style(ax, f"Correction curves, {curve_range[0]:g} to {curve_range[1]:g} °C (site at {site.temperature_C:g} °C)\n"
+             "shaded: speed or generator limited", "Ambient temperature (°C)", "Value")
     legend(ax)
     return Section(
         "site",
@@ -551,10 +561,11 @@ def part_load_section(model, t_amb_C=15.0, rh=0.6, loads=None, staging=True, nox
     ]
     fig1, (a1, a2) = figure(10, 3.8, 2)
     a1.plot(perf["Load (%)"], perf["Heat rate (kJ/kWh)"], "o-", color=NAVY)
-    style(a1, "Heat rate against load", "Load (%)", "Heat rate (kJ/kWh)")
+    conditions = f"{t_amb_C:g} °C, {100 * rh:.0f} % RH"
+    style(a1, f"Heat rate against load\n{conditions}", "Load (%)", "Heat rate (kJ/kWh)")
     a2.plot(perf["Load (%)"], perf["TIT (°C)"], "o-", color=RED, label="TIT")
     a2.plot(perf["Load (%)"], perf["Exhaust temperature (°C)"], "o-", color=BLUE, label="Exhaust")
-    style(a2, "Temperatures against load", "Load (%)", "Temperature (°C)")
+    style(a2, f"Temperatures against load\n{conditions}", "Load (%)", "Temperature (°C)")
     legend(a2)
     fig2, ax = figure(7.5, 4)
     ax.semilogy(em["Load (%)"], em["NOx (mg/Nm³)"], "o-", color=NAVY, label="NOx")
@@ -563,7 +574,9 @@ def part_load_section(model, t_amb_C=15.0, rh=0.6, loads=None, staging=True, nox
     ax.axhline(co_limit, color=AMBER, ls="--", lw=1, label=f"CO limit {co_limit:g}")
     ax.axvspan(0, 100 * MCPD_LOAD_THRESHOLD, color=GRID, alpha=0.4, lw=0)
     ax.set_xlim(min(em["Load (%)"]) - 3, 103)
-    style(ax, "Emissions against load (grey: NOx limit not applied)", "Load (%)", "mg/Nm³ dry at 15 % O2")
+    style(ax, f"Emissions against load, {conditions}, air staging {'on' if staging else 'off'}\n"
+             f"limits NOx {nox_limit:g}, CO {co_limit:g} mg/Nm³ (grey: NOx limit not applied)",
+          "Load (%)", "mg/Nm³ dry at 15 % O2")
     legend(ax)
     return Section(
         "partload",
@@ -686,7 +699,9 @@ def passoff_section(
     top = budget.head(8)
     fig1, ax = figure(7.5, 4)
     ax.barh(top["Input"][::-1], top["Share (%)"][::-1], color=NAVY)
-    style(ax, "Uncertainty budget: corrected power", "Share of variance (%)")
+    test_day = (f"{n_points} test point{'s' if n_points != 1 else ''} at {t_amb_C:g} °C, {p_amb_mbar:g} mbar, "
+                f"{100 * rh:.0f} % RH")
+    style(ax, f"Uncertainty budget: corrected power\n{test_day}", "Share of variance (%)")
     ax.grid(axis="y", visible=False)
     fig2, ax = figure(7.5, 4)
     y = np.arange(len(results))
@@ -694,7 +709,8 @@ def passoff_section(
     ax.axvline(0, color=INK2, lw=0.8)
     ax.set_yticks(y, results["Result"])
     ax.set_xlim(-2.5, 2.5)
-    style(ax, "Corrected result against hidden truth (bar = U95)", "Error / U95")
+    style(ax, f"Corrected result against hidden truth (bar = U95)\nhidden health: flow {compressor_flow_pct:+g} %, "
+             f"efficiency {compressor_eff_pts:+g} points", "Error / U95")
     tags = [c for c in test.data.columns if c.startswith("T_exh_")]
     fig3, ax = figure(7.5, 4)
     for i, tag in enumerate(tags):
@@ -706,7 +722,8 @@ def passoff_section(
             color=RED if excluded_tag else SERIES[i % 3],
             alpha=1 if excluded_tag else 0.6,
         )
-    style(ax, "Exhaust thermocouples (red: excluded by validation)", "Time (s)", "Temperature (°C)")
+    style(ax, f"Exhaust thermocouples (red: excluded by validation)\n{test_day}, {len(faults)} sensor faults injected",
+          "Time (s)", "Temperature (°C)")
     warnings = list(res.warnings) + list(res.notes)
     return Section(
         "passoff",
@@ -829,7 +846,8 @@ def fleet_section(model, n_engines=6, days=365, interval=3, dispatch="base", fau
                 ax.axvline(a.day, color=RED, lw=1.2, ls="--")
         style(ax, ylabel=label)
     axes[0].set_title(
-        f"Engine {e_plot}: deltas against the baseline (green: wash, amber: fault, red: alarm)",
+        f"Engine {e_plot} of {n_engines}: deltas against the baseline, {days} days, "
+        f"{'base load' if dispatch == 'base' else 'cycling'}\n(green: wash, amber: fault, red: alarm)",
         fontsize=11,
     )
     axes[-1].set_xlabel("Day", color=INK2)
@@ -921,7 +939,7 @@ def turbofan_section(
     figures = {}
     notes = []
     if offdesign:
-        from ..aero_offdesign import TurbofanEngine
+        from ..aero_offdesign import MatchError, TurbofanEngine
 
         engine = TurbofanEngine(cycle, w, cruise)
         sls = Flight()
@@ -933,7 +951,13 @@ def turbofan_section(
         for m_, c in zip([0.2, 0.4, 0.6, 0.8], ["#c3daf7", "#86b6ef", BLUE, NAVY]):
             guess, th = None, []
             for h in alts:
-                rr = engine.run(Flight(h, m_), tet=1700.0, guess=guess)
+                try:
+                    rr = engine.run(Flight(h, m_), tet=take_off_tet, guess=guess)
+                except MatchError:  # this TET cannot hold a match here: leave a gap in the curve
+                    guess = None
+                    th.append(np.nan)
+                    lapse.append({"Altitude (m)": h, "Mach": m_, "Net thrust (kN)": np.nan, "TSFC (mg/N/s)": np.nan})
+                    continue
                 guess = rr.info["x"]
                 th.append(rr.net_thrust / 1e3)
                 lapse.append(
@@ -945,14 +969,21 @@ def turbofan_section(
                     }
                 )
             ax.plot(alts / 1e3, th, color=c, lw=2, label=f"Mach {m_}")
-        style(ax, "Thrust lapse at TET 1700 K", "Altitude (km)", "Net thrust (kN)")
+        style(ax, f"Thrust lapse at TET {take_off_tet:.0f} K\nBPR {bpr:g}, FPR {fan_pr:g}, HPC PR {hpc_pr:g}, "
+                 f"cruise TET {tet_cruise:.0f} K",
+              "Altitude (km)", "Net thrust (kN)")
         legend(ax)
         figures["Thrust lapse"] = fig
         tables["Thrust lapse"] = pd.DataFrame(lapse)
         if environment:
             from ..aero_environment import lto_cycle, noise_sources
 
-            lto = lto_cycle(engine, take_off_tet)
+            try:
+                lto = lto_cycle(engine, take_off_tet)
+            except MatchError as e:
+                lto = None
+                notes.append(f"LTO NOx was not calculated: the engine has no match at these values ({e}).")
+        if environment and lto is not None:
             tables["LTO NOx"] = pd.DataFrame(lto["modes"]).rename(
                 columns={
                     "mode": "Mode",
@@ -969,7 +1000,13 @@ def turbofan_section(
                 ("LTO NOx Dp/Foo", f"{lto['dp_foo']:.1f} g/kN (CAEP/8 limit {lto['tier8']:.1f})"),
                 ("LTO fuel / CO2", f"{lto['fuel_kg']:.0f} kg / {lto['co2_kg']:.0f} kg"),
             ]
-            approach = engine.run(sls, thrust=0.3 * take_off.net_thrust)
+        if environment:
+            try:
+                approach = engine.run(sls, thrust=0.3 * take_off.net_thrust)
+            except MatchError as e:
+                approach = None
+                notes.append(f"Noise sources were not calculated: no approach match at these values ({e}).")
+        if environment and approach is not None:
             n_to, n_ap = noise_sources(engine, take_off), noise_sources(engine, approach)
             src = ["fan_inlet_broadband", "fan_discharge_broadband", "core_jet", "bypass_jet", "total"]
             noise = pd.DataFrame(
@@ -985,7 +1022,9 @@ def turbofan_section(
             ax.bar(x + 0.2, noise["Approach (dB at 1 m)"][:-1], 0.4, color=BLUE, label="Approach")
             ax.set_xticks(x, [s.replace(" broadband", "") for s in noise["Source"][:-1]])
             ax.set_ylim(90, max(noise["Take-off (dB at 1 m)"]) + 5)
-            style(ax, "Noise source levels", None, "dB re 20 µPa at 1 m")
+            style(ax, f"Noise source levels, take-off TET {take_off_tet:.0f} K\nBPR {bpr:g}, FPR {fan_pr:g}, "
+                     f"cruise TET {tet_cruise:.0f} K",
+                  None, "dB re 20 µPa at 1 m")
             legend(ax)
             figures["Noise sources"] = fig
             notes.append(
