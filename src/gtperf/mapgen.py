@@ -297,22 +297,32 @@ class _StackedTurbine:
         self.b2d = math.atan((self.ta2 * phi - 1) / phi)
         self.target = isentropic_eff
         self.zeta = brentq(lambda z: self._design(z)[0] - isentropic_eff, 0.0, 2.0, xtol=1e-12)
-        _, self.a_noz, self.a_rot = self._design(self.zeta)
+        _, self.a_noz, self.a_rot = self._design(self.zeta, areas=True)
 
-    def _design(self, zeta):
+    def _design(self, zeta, areas=False):
+        """Efficiency at design for loss coefficient `zeta`; with `areas`, also each row's throat area per
+        unit design flow. A row whose design exit lies past its mass flux peak (supersonic) is sized as
+        just choked, since a fixed-geometry row cannot pass more than its peak flux."""
         gas, u = self.gas, self.u
         va = self.s.flow_coefficient * u
         t0, p0, a_noz, a_rot = self.t_in, P_REF, [], []
+
+        def area(static, tan_exit):
+            t, p = static(va)
+            return 1.0 / min(p / (gas.R * t) * va, 0.995 * self._peak(static, tan_exit)[1])
+
         for _ in range(int(self.s.stages)):
             v2sq = va * va * (1 + self.ta2**2)
             t2 = t0 - v2sq / (2 * gas.cp)
             p2 = p0 * ((t2 - zeta * v2sq / (2 * gas.cp)) / t0) ** (1 / gas.k)
-            a_noz.append(1.0 / (p2 / (gas.R * t2) * va))
+            if areas:
+                a_noz.append(area(self._nozzle_static(t0, p0, zeta), self.ta2))
             w2sq = va * va + (va * self.ta2 - u) ** 2
             w3sq = va * va * (1 + self.tb3**2)
             t3 = t2 + (w2sq - w3sq) / (2 * gas.cp)
             p3 = p2 * ((t3 - zeta * w3sq / (2 * gas.cp)) / t2) ** (1 / gas.k)
-            a_rot.append(1.0 / (p3 / (gas.R * t3) * va))
+            if areas:
+                a_rot.append(area(self._rotor_static(t2, p2, w2sq, zeta), self.tb3))
             vt3 = u - va * self.tb3
             t03 = t3 + (va * va + vt3 * vt3) / (2 * gas.cp)
             p0 = p3 * (t03 / t3) ** (1 / gas.k)
@@ -321,17 +331,50 @@ class _StackedTurbine:
         eff = (self.t_in - t0) / (self.t_in * (1 - pr ** (-gas.k)))
         return eff, a_noz, a_rot
 
+    def _nozzle_static(self, t0, p0, zn):
+        """Nozzle exit static (t, p) against axial velocity, for inlet total t0, p0 and loss zn."""
+        gas = self.gas
+
+        def noz(va):
+            v2sq = va * va * (1 + self.ta2**2)
+            t2 = t0 - v2sq / (2 * gas.cp)
+            ts = t2 - zn * v2sq / (2 * gas.cp)
+            return (t2, p0 * (max(ts, 1.0) / t0) ** (1 / gas.k)) if t2 > 1 else (1.0, 1e-9)
+        return noz
+
+    def _rotor_static(self, t2, p2, w2sq, zr):
+        """Rotor exit static (t, p) against axial velocity, for inlet static t2, p2, inlet relative
+        velocity squared w2sq and loss zr."""
+        gas = self.gas
+
+        def rot(va):
+            w3sq = va * va * (1 + self.tb3**2)
+            t3 = t2 + (w2sq - w3sq) / (2 * gas.cp)
+            ts = t3 - zr * w3sq / (2 * gas.cp)
+            return (t3, p2 * (max(ts, 1.0) / t2) ** (1 / gas.k)) if t3 > 1 else (1.0, 1e-9)
+        return rot
+
+    def _peak(self, static, tan_exit):
+        """Axial velocity and mass flux at a row's flux peak (its choke)."""
+        f = lambda va: (lambda tp: tp[1] / (self.gas.R * tp[0]) * va)(static(va))  # noqa: E731
+        a0 = math.sqrt(self.gas.g * self.gas.R * self.t_in) / math.sqrt(1 + tan_exit**2)
+        # the flux rises to a single peak and then falls; scan for it first so the bounded search cannot
+        # settle on the falling side
+        grid = np.linspace(1e-3, 3 * a0, 61)
+        i = int(np.argmax([f(v) for v in grid]))
+        res = minimize_scalar(lambda v: -f(v), bounds=(grid[max(i - 1, 0)], grid[min(i + 1, 60)]),
+                              method="bounded", options={"xatol": 1e-4})
+        return res.x, f(res.x)
+
     def _row(self, flux, tan_exit, static):
         """Axial velocity through a row of fixed exit angle passing `flux` (kg/s/m2); `static(va)` gives
         the exit static (t, p). None when the row cannot pass the flow (choked)."""
         f = lambda va: (lambda tp: tp[1] / (self.gas.R * tp[0]) * va)(static(va))  # noqa: E731
-        sec = math.sqrt(1 + tan_exit**2)
-        a0 = math.sqrt(self.gas.g * self.gas.R * self.t_in) / sec
-        res = minimize_scalar(lambda v: -f(v), bounds=(1e-3, 3 * a0), method="bounded",
-                              options={"xatol": 1e-4})
-        va_max = res.x
-        if flux >= f(va_max):
+        va_max, f_max = self._peak(static, tan_exit)
+        if flux >= f_max:
             return None
+        if flux <= f(1e-6):
+            return flux / f(1e-6) * 1e-6
         return brentq(lambda v: f(v) - flux, 1e-6, va_max, xtol=1e-9)
 
     def point(self, n, w):
@@ -344,12 +387,7 @@ class _StackedTurbine:
         for k, (an, ar) in enumerate(zip(self.a_noz, self.a_rot)):
             zn = self.zeta * (f(math.degrees(math.atan(swirl_in) - a3d)) if k and swirl_in is not None else 1)
 
-            def noz(va, t0=t0, p0=p0, zn=zn):
-                v2sq = va * va * (1 + self.ta2**2)
-                t2 = t0 - v2sq / (2 * gas.cp)
-                ts = t2 - zn * v2sq / (2 * gas.cp)
-                return (t2, p0 * (max(ts, 1.0) / t0) ** (1 / gas.k)) if t2 > 1 else (1.0, 1e-9)
-
+            noz = self._nozzle_static(t0, p0, zn)
             va2 = self._row(w / an, self.ta2, noz)
             if va2 is None:
                 return None
@@ -358,12 +396,7 @@ class _StackedTurbine:
             w2sq = va2 * va2 + wt2 * wt2
             zr = self.zeta * f(math.degrees(math.atan2(wt2, va2) - self.b2d))
 
-            def rot(va, t2=t2, p2=p2, w2sq=w2sq, zr=zr):
-                w3sq = va * va * (1 + self.tb3**2)
-                t3 = t2 + (w2sq - w3sq) / (2 * gas.cp)
-                ts = t3 - zr * w3sq / (2 * gas.cp)
-                return (t3, p2 * (max(ts, 1.0) / t2) ** (1 / gas.k)) if t3 > 1 else (1.0, 1e-9)
-
+            rot = self._rotor_static(t2, p2, w2sq, zr)
             va3 = self._row(w / ar, self.tb3, rot)
             if va3 is None:
                 return None
@@ -416,6 +449,15 @@ def turbine_map(pressure_ratio, isentropic_eff, stages=None, t_in=1500.0, speeds
         wp.append(w_row)
         eff.append([max(e, 0.02) for e in e_row])
         choke.append((n, float(pr_ch), float(w_c)))
+    # a turbine's choking capacity hardly moves with speed; a line choking far below it is one where the
+    # 1-D model has lost the flow (huge incidence losses choking a downstream row), so it is left out
+    w_design = float(np.interp(1.0, [c[0] for c in choke], [c[2] for c in choke]))
+    keep = [i for i, c in enumerate(choke) if c[2] > 0.8 * w_design]
+    if not any(abs(choke[i][0] - 1.0) < 1e-9 for i in keep) or len(keep) < 4:
+        raise ValueError("the turbine stage inputs give a turbine that chokes below its own design flow: "
+                         "raise the turbine efficiency or change the stage loading or flow coefficient")
+    speeds = [speeds[i] for i in keep]
+    wp, eff, choke = [wp[i] for i in keep], [eff[i] for i in keep], [choke[i] for i in keep]
     m = TabulatedTurbineMap(tuple(speeds), tuple(grid), tuple(map(tuple, wp)), tuple(map(tuple, eff)),
                             design_pr=pressure_ratio, design_np=1.0, design_map_pr=pressure_ratio,
                             source="stage stacking")

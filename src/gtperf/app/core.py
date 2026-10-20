@@ -245,6 +245,20 @@ def compressor_stages(d):
                             vane_closed_speed=d["vane_closed_speed"])
 
 
+def _check_physical(d):
+    """Inputs have no limits, but some values cannot describe any engine; say which in plain words."""
+    for key, label in (("compressor_polytropic_eff", "Compressor polytropic efficiency"),
+                       ("turbine_eff", "Turbine efficiency"), ("mechanical_efficiency", "Mechanical efficiency"),
+                       ("generator_efficiency", "Generator efficiency")):
+        if not 0 < d[key] < 1:
+            raise ValueError(f"{label} is {d[key]:g}: an efficiency has to lie between 0 and 1")
+    if d["vane_open_speed"] > 1:
+        raise ValueError(f"The vanes are fully open only above {d['vane_open_speed']:g} of design speed, so they "
+                         "would be part closed at the design point: set that speed to 1.0 or less")
+    if d["vane_rows"] and d["vane_closed_speed"] >= d["vane_open_speed"]:
+        raise ValueError("The vanes' fully closed speed has to be below their fully open speed")
+
+
 def design_engine(design=None):
     """An EngineModel built forwards from design values (missing keys take DESIGN_DEFAULTS)."""
     from ..components import Combustor, Compressor, Turbine
@@ -253,6 +267,7 @@ def design_engine(design=None):
     from ..offdesign import Generator, Limits, TwinShaftEngine
 
     d = {**DESIGN_DEFAULTS, **(design or {})}
+    _check_physical(d)
     cycle = TwinShaftCycle(
         Compressor(d["pressure_ratio"], d["compressor_polytropic_eff"]),
         Combustor(natural_gas(), d["tit_C"] + 273.15, dp_frac=d["combustor_dp"]),
@@ -266,12 +281,13 @@ def design_engine(design=None):
 
     sgt = load_datasheet()  # the handling bleed schedule and generator derate are generic; the rest is `d`
     _, limits, controls = offdesign_options(sgt.get("offdesign"), d["pressure_ratio"])
+    cmap = compressor_map(d["pressure_ratio"], d["compressor_polytropic_eff"], compressor_stages(d))
     limits = Limits(
         gg_speed=d["gg_speed_limit"],
-        gg_corrected_speed=d["gg_speed_limit"],
+        # the engine cannot run faster (corrected) than the top speed line the compressor map reaches
+        gg_corrected_speed=min(d["gg_speed_limit"], float(cmap.nc[-1]) / cmap.design_nc),
         generator=Generator(d["generator_MVA"], d["power_factor"], limits.generator.derate),
     )
-    cmap = compressor_map(d["pressure_ratio"], d["compressor_polytropic_eff"], compressor_stages(d))
     controls = replace(controls, vigv=None)  # the vane schedule is part of the calculated map
     engine = TwinShaftEngine(cycle, d["air_flow_kg_s"], compressor_map=cmap, limits=limits, controls=controls)
     st = engine.design.stations
@@ -1032,7 +1048,7 @@ def fleet_section(model, n_engines=6, days=365, interval=3, dispatch="base", fau
     ):
         ax.plot(days_sel, dz[col], ".", ms=3, color=c, alpha=0.6)
         ax.plot(days_sel, dz[col].rolling(10, min_periods=1).mean(), color=c, lw=1.5)
-        for w in washes.loc[washes["engine"] == e_plot, "day"]:
+        for w in (washes.loc[washes["engine"] == e_plot, "day"] if len(washes) else []):
             ax.axvline(w, color=GREEN, lw=0.8, ls=":")
         for f in ff:
             if f.engine == e_plot:
@@ -1047,8 +1063,8 @@ def fleet_section(model, n_engines=6, days=365, interval=3, dispatch="base", fau
         fontsize=11,
     )
     axes[-1].set_xlabel("Day", color=INK2)
-    detected = int(sc["detected_day"].notna().sum())
-    correct = int(sc["correct"].sum())
+    detected = int(sc["detected_day"].notna().sum()) if len(sc) else 0
+    correct = int(sc["correct"].sum()) if len(sc) else 0
     inputs = {
         "Engines": n_engines,
         "Days": days,

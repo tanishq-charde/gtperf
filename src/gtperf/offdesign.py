@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
 
 import numpy as np
 from scipy.optimize import brentq, root
@@ -230,14 +231,21 @@ class _Engine:
                 break
             held.append(worst)
 
-            def residuals(z, name=worst):
+            def residuals(z, name=worst, target=0.0):
                 res, r, s = evaluate(z[:-1], z[-1] * tit_max)
                 v = self._limit_values(r, ambient, s)
                 if self._speed_limited():
                     v.update(self._speed_values(z[:-1], s))
-                return [*res, v[name]]
+                return [*res, v[name] - target]
 
-            sol = root(residuals, [*x, tit / tit_max * 0.98], method="hybr", options={"xtol": 1e-11})
+            sol = _root(residuals, [*x, tit / tit_max * 0.98])
+            if not sol.success:  # far past the limit: walk the limit down to its value from where we are
+                z, excess = [*x, tit / tit_max], values[worst]
+                for target in excess * np.linspace(1, 0, 9)[1:]:
+                    sol = _root(lambda q, t=target: residuals(q, target=t), z)
+                    if not sol.success:
+                        break
+                    z = list(sol.x)
             _check(sol)
             x, tit, control = list(sol.x[:-1]), sol.x[-1] * tit_max, worst
             _, result, speed = evaluate(x, tit)
@@ -271,7 +279,7 @@ class _Engine:
                     res, r, _ = evaluate(zz[:-1], zz[-1] * tit_ref)
                     return [*res, r.electrical_power / target - 1]
 
-                sol = root(residuals_at, z, method="hybr", options={"xtol": 1e-11})
+                sol = _root(residuals_at, z)
                 _check(sol)
                 z = list(sol.x)
         _check(sol)
@@ -399,14 +407,19 @@ class TwinShaftEngine(_Engine):
             return self._evaluate(*x, t, *args)
 
         x0 = list(guess[:3]) if guess else [1.0, self.beta_design, ambient.p / self.design_ambient.p]
-        sol = root(lambda x: evaluate(x, tit_max)[0], x0, method="hybr", options={"xtol": 1e-10})
+        sol = _root(lambda x: evaluate(x, tit_max)[0], x0)
         start = None
-        if not sol.success:
-            # no match at the TIT limit (on a cold day it would lie beyond the speed limits and the map):
-            # start the limit search from the point at the corrected speed limit instead
-            sol, tit_held = self._at_corrected_speed_limit(evaluate, x0, tit_max)
-            if sol.success and tit_held <= tit_max:
-                start = (tit_held, "gas generator corrected speed")
+        n_lim = self.limits.gg_corrected_speed
+        if not sol.success or (n_lim and sol.x[0] > n_lim):
+            # no match at the TIT limit, or one past the corrected speed limit (on a cold day it would lie
+            # beyond the speed limits and the map): start the limit search from the point at the corrected
+            # speed limit instead
+            held, tit_held = self._at_corrected_speed_limit(evaluate, x0 if not sol.success else list(sol.x),
+                                                            tit_max)
+            if held.success and tit_held <= tit_max:
+                sol, start = held, (tit_held, "gas generator corrected speed")
+            elif not sol.success:
+                sol = held
         _check(sol)
         x, tit_op, control, result, speed = self._solve_limited(evaluate, list(sol.x), tit_max, ambient,
                                                                 start=start)
@@ -426,8 +439,7 @@ class TwinShaftEngine(_Engine):
         """Gas path with corrected speed at its limit and TIT free. Returns (root result whose x is the
         gas-path variables, TIT)."""
         n = self.limits.gg_corrected_speed or self.max_gg_speed
-        sol = root(lambda z: evaluate([n, *z[:2]], z[2] * tit_max)[0], [x0[1], x0[2], 0.95], method="hybr",
-                   options={"xtol": 1e-10})
+        sol = _root(lambda z: evaluate([n, *z[:2]], z[2] * tit_max)[0], [x0[1], x0[2], 0.95])
         tit = sol.x[2] * tit_max
         sol.x = np.array([n, *sol.x[:2]])
         return sol, tit
@@ -537,6 +549,15 @@ class SingleShaftEngine(_Engine):
         result.info = self._info(n, x[0], g, vigv, bleed, 1.0, tit_op, control)
         result.info["solution"] = tuple(x)
         return result
+
+
+def _root(f, x0):
+    """`root` that reports a failed evaluation (the solver straying where the gas path has no meaning) as
+    a failed solve instead of raising."""
+    try:
+        return root(f, x0, method="hybr", options={"xtol": 1e-11})
+    except (RuntimeError, ValueError, ZeroDivisionError, OverflowError) as e:
+        return SimpleNamespace(success=False, message=str(e), x=np.array(x0, dtype=float))
 
 
 def _check(sol):
