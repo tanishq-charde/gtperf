@@ -133,9 +133,9 @@ def main():
 
     cruise = engine.design
     print(f"design reproduction: thrust error {engine.run().net_thrust / cruise.net_thrust - 1:.1e}")
-    print(f"cruise: {cruise.net_thrust / 1e3:.2f} kN, TSFC {cruise.tsfc * 1e6:.2f} mg/N/s")
+    print(f"cruise: {cruise.net_thrust / 1e3:.2f} kN, TSFC {cruise.tsfc:.3e} kg/(N s)")
     print(f"take-off (SLS, TET {TAKE_OFF_TET:.0f} K): {take_off.net_thrust / 1e3:.1f} kN, "
-          f"TSFC {take_off.tsfc * 1e6:.2f} mg/N/s, N1 {take_off.info['n1']:.3f}, N2 {take_off.info['n2']:.3f}")
+          f"TSFC {take_off.tsfc:.3e} kg/(N s), N1 {take_off.info['n1']:.3f}, N2 {take_off.info['n2']:.3f}")
     print(f"idle (N1 {IDLE_N1}): {idle.net_thrust / 1e3:.1f} kN, N2 {idle.info['n2']:.3f}")
     print(f"acceleration idle to 95 % take-off thrust: {t95:.2f} s (fuel ramp), {hard.time_to(0.95):.2f} s (TET step)")
     print(f"minimum HPC surge margin: {100 * accel.surge_margin_hpc.min():.1f} % (fuel ramp), "

@@ -296,7 +296,7 @@ class TurbofanResult:
 
     @property
     def tsfc(self):
-        """Thrust-specific fuel consumption, kg/(N s). Multiply by 1e6 for mg/(N s)."""
+        """Thrust-specific fuel consumption, kg/(N s)."""
         return self.fuel_flow / self.net_thrust
 
     @property
@@ -329,7 +329,7 @@ class TurbofanResult:
     def summary(self):
         return {
             "net_thrust_kN": self.net_thrust / 1e3,
-            "tsfc_mg_per_Ns": self.tsfc * 1e6,
+            "tsfc_kg_per_Ns": self.tsfc,
             "specific_thrust_m_s": self.specific_thrust,
             "air_flow_kg_s": self.air_flow,
             "fuel_flow_kg_s": self.fuel_flow,

@@ -94,11 +94,11 @@ Jet mixing noise scales roughly with jet area times velocity to the eighth power
 main reason bypass ratio has risen. The turbofan model shows the trade at 22 kN cruise thrust, each bypass
 ratio at its best fan pressure ratio:
 
-| Bypass ratio | Best fan PR | TSFC (mg/N/s) | Intake flow (kg/s) | Core jet (m/s) |
+| Bypass ratio | Best fan PR | TSFC (kg/(N s)) | Intake flow (kg/s) | Core jet (m/s) |
 |---:|---:|---:|---:|---:|
-| 7 | 1.93 | 15.43 | 123 | 498 |
-| 10 | 1.65 | 14.60 | 161 | 460 |
-| 13 | 1.50 | 14.15 | 198 | 420 |
+| 7 | 1.93 | 1.543e-5 | 123 | 498 |
+| 10 | 1.65 | 1.460e-5 | 161 | 460 |
+| 13 | 1.50 | 1.415e-5 | 198 | 420 |
 
 From bypass ratio 7 to 13, fuel burn falls 8 %. Scaling jet noise intensity as flow times velocity to the
 seventh power (with area proportional to flow over velocity), the core jet is about 3 dB quieter. The cost is

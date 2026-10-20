@@ -118,7 +118,7 @@ def test_convergent_nozzle_chokes_at_sonic_exit():
 
 def test_cruise_design_point_is_plausible():
     r = Turbofan(bpr=10.0, fan_pr=1.5, fan_core_pr=2.4, hpc_pr=17.0, tet=1600.0).run(150.0, CRUISE)
-    assert 13.5 < r.tsfc * 1e6 < 16.0  # modern high-bypass cruise TSFC, mg/(N s)
+    assert 13.5e-6 < r.tsfc < 16.0e-6  # modern high-bypass cruise TSFC, kg/(N s)
     assert 0.65 < r.propulsive_efficiency < 0.85
     assert 0.45 < r.thermal_efficiency < 0.55
     assert r.core_jet.choked and r.bypass_jet.choked

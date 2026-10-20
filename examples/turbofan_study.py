@@ -27,7 +27,7 @@ def sweep(bpr):
             r = engine(bpr, fpr).run(100.0, CRUISE)
         except ValueError:  # the LPT cannot drive a fan this hard
             break
-        rows.append((fpr, r.specific_thrust, r.tsfc * 1e6, r))
+        rows.append((fpr, r.specific_thrust, r.tsfc, r))
     return rows
 
 
@@ -46,10 +46,10 @@ def main():
     ax.plot([b[1][1] for b in best], [b[1][2] for b in best], "o--", color=INK, lw=1, ms=6, mec=SURFACE, mew=1.5,
             label="best fan pressure ratio for each BPR")
     design = engine(10, 1.5).run(100.0, CRUISE)
-    ax.plot(design.specific_thrust, design.tsfc * 1e6, "D", color=FLAG, ms=8, mec=SURFACE, mew=1.5,
+    ax.plot(design.specific_thrust, design.tsfc, "D", color=FLAG, ms=8, mec=SURFACE, mew=1.5,
             label="example design (BPR 10, FPR 1.50)")
     ax.set_xlabel("Specific thrust (m/s)")
-    ax.set_ylabel("TSFC (mg/N/s)")
+    ax.set_ylabel("TSFC (kg/(N s))")
     ax.set_title("TSFC against specific thrust, each line sweeps fan pressure ratio", loc="left")
     ax.legend(frameon=False, loc="upper left", labelcolor=INK2, fontsize=9)
 
@@ -76,7 +76,7 @@ def main():
     fig.savefig(FIG / "turbofan_trade.png", dpi=150)
     plt.close(fig)
     for bpr, (fpr, st, tsfc, _) in best:
-        print(f"BPR {bpr:4.1f}: best FPR {fpr:.2f}, specific thrust {st:6.1f} m/s, TSFC {tsfc:.2f} mg/N/s")
+        print(f"BPR {bpr:4.1f}: best FPR {fpr:.2f}, specific thrust {st:6.1f} m/s, TSFC {tsfc:.3e} kg/(N s)")
 
 
 if __name__ == "__main__":

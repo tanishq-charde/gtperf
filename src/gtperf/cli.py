@@ -128,7 +128,7 @@ def turbofan_from_config(cfg):
     return engine, Flight(**cfg.get("flight", {}))
 
 
-OFFDESIGN_COLUMNS = ("altitude_m", "mach", "control", "net_thrust_kN", "tsfc_mg_per_Ns", "air_flow_kg_s",
+OFFDESIGN_COLUMNS = ("altitude_m", "mach", "control", "net_thrust_kN", "tsfc_kg_per_Ns", "air_flow_kg_s",
                      "bypass_ratio", "tet_K", "n1", "n2", "surge_margin_fan", "surge_margin_booster",
                      "surge_margin_hpc")
 
@@ -145,7 +145,7 @@ def turbofan_offdesign_table(engine, points):
         guess = r.info["x"]
         s = r.summary()
         rows.append({"altitude_m": flight.altitude_m, "mach": flight.mach, "control": r.info["control"],
-                     **{k: s[k] for k in ("net_thrust_kN", "tsfc_mg_per_Ns", "air_flow_kg_s", "bypass_ratio", "tet_K")},
+                     **{k: s[k] for k in ("net_thrust_kN", "tsfc_kg_per_Ns", "air_flow_kg_s", "bypass_ratio", "tet_K")},
                      **{k: r.info[k] for k in OFFDESIGN_COLUMNS[8:]}})
     return rows
 

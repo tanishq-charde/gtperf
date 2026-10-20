@@ -101,6 +101,15 @@ _TEX = {
 }
 
 
+SUPERSCRIPT = str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+
+def sci(x, digits=3):
+    """A small number in scientific notation for display, e.g. 1.527 × 10⁻⁵."""
+    m, e = f"{x:.{digits}e}".split("e")
+    return f"{m} × 10{str(int(e)).translate(SUPERSCRIPT)}"
+
+
 def tex(text):
     """Make a label safe for Computer Modern: non-ASCII characters go through math mode."""
     if not text or "$" in text or (text.isascii() and not any(c in _TEX for c in text)):
@@ -1220,7 +1229,7 @@ def turbofan_section(
     design = pd.DataFrame(
         [
             {"Quantity": "Net thrust", "Value": r.net_thrust / 1e3, "Unit": "kN"},
-            {"Quantity": "TSFC", "Value": r.tsfc * 1e6, "Unit": "mg/(N s)"},
+            {"Quantity": "TSFC", "Value": r.tsfc, "Unit": "kg/(N s)"},
             {"Quantity": "Intake flow", "Value": r.air_flow, "Unit": "kg/s"},
             {"Quantity": "Specific thrust", "Value": r.specific_thrust, "Unit": "m/s"},
             {"Quantity": "Thermal efficiency", "Value": 100 * r.thermal_efficiency, "Unit": "%"},
@@ -1242,7 +1251,7 @@ def turbofan_section(
         "Take-off TET (K)": take_off_tet,
     }
     key = [
-        ("Cruise TSFC", f"{r.tsfc * 1e6:.2f} mg/(N s)"),
+        ("Cruise TSFC", f"{sci(r.tsfc)} kg/(N s)"),
         ("Intake flow", f"{r.air_flow:.1f} kg/s"),
         ("Overall efficiency", f"{100 * r.overall_efficiency:.1f} %"),
     ]
@@ -1274,7 +1283,7 @@ def turbofan_section(
                     guess = None
                     gaps.append((m_, h))
                     th.append(np.nan)
-                    lapse.append({"Altitude (m)": h, "Mach": m_, "Net thrust (kN)": np.nan, "TSFC (mg/N/s)": np.nan})
+                    lapse.append({"Altitude (m)": h, "Mach": m_, "Net thrust (kN)": np.nan, "TSFC (kg/(N s))": np.nan})
                     continue
                 guess = rr.info["x"]
                 if h == alts[0]:
@@ -1285,7 +1294,7 @@ def turbofan_section(
                         "Altitude (m)": h,
                         "Mach": m_,
                         "Net thrust (kN)": rr.net_thrust / 1e3,
-                        "TSFC (mg/N/s)": rr.tsfc * 1e6,
+                        "TSFC (kg/(N s))": rr.tsfc,
                     }
                 )
             ax.plot(alts / 1e3, th, color=c, lw=2, label=f"Mach {m_}")

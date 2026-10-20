@@ -35,5 +35,5 @@ fprintf('%.2f MW, heat rate %.0f kJ/kWh\n', r.electrical_power / 1e6, r.heat_rat
 
 fan = struct('bpr', 10, 'fan_pr', 1.5, 'fan_core_pr', 2.4, 'hpc_pr', 17, 'tet', 1600);
 r = gt_turbofan(fan, 170, struct('altitude_m', 10668, 'mach', 0.78));
-fprintf('%.1f kN, TSFC %.2f mg/N/s\n', r.net_thrust / 1e3, r.tsfc * 1e6);
+fprintf('%.1f kN, TSFC %.3e kg/(N s)\n', r.net_thrust / 1e3, r.tsfc);
 ```

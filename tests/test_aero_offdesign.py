@@ -54,7 +54,7 @@ def test_design_point_is_reproduced_without_booster():
 def test_take_off_versus_cruise(engine, take_off):
     cruise = engine.design
     assert take_off.net_thrust > 3.5 * cruise.net_thrust
-    assert 7.0 < take_off.tsfc * 1e6 < 9.0 < cruise.tsfc * 1e6  # ram drag makes cruise TSFC about twice SLS
+    assert 7.0e-6 < take_off.tsfc < 9.0e-6 < cruise.tsfc  # ram drag makes cruise TSFC about twice SLS
     assert take_off.air_flow > 2 * cruise.air_flow
     assert not take_off.bypass_jet.choked and cruise.bypass_jet.choked
     assert take_off.info["n1_corrected"] < 1 and take_off.info["n2"] > 1  # hot day-like corrected speeds at SLS
