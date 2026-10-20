@@ -82,7 +82,7 @@ source = "Validation anchor"
 method = "T"
 acceptance = "Fitted values exact; exhaust temperature within 10 K"
 tests = ["test_calibration_hits_datasheet"]
-evidence = "README calibration table: 550.3 °C against 555 °C"
+evidence = "README calibration result: 550.3 °C against 555 °C"
 
 [[requirement]]
 id = "P-03"
