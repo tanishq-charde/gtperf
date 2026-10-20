@@ -22,7 +22,7 @@ from matplotlib.category import StrCategoryFormatter  # noqa: E402
 from matplotlib.text import Text  # noqa: E402
 from matplotlib.ticker import FixedFormatter, FuncFormatter  # noqa: E402
 
-from ..cli import engine_from_config  # noqa: E402
+from ..cli import engine_from_config, offdesign_options  # noqa: E402
 from ..cycle import ISO, Ambient  # noqa: E402
 from ..maps import NEW_AND_CLEAN, Health  # noqa: E402
 from ..site import correction_curves, isa_pressure, site_performance  # noqa: E402
@@ -190,6 +190,125 @@ class EngineModel:
 def build_engine(datasheet):
     d, cal, engine = engine_from_config(datasheet)
     return EngineModel(d, cal, engine)
+
+
+# Design mode: the engine is built forwards from its design values instead of fitted to a datasheet. The
+# defaults are the values fitted to the published SGT-400 rating, so they reproduce it (12.9 MW, 10,294 kJ/kWh).
+DESIGN_DEFAULTS = {
+    "name": "My engine (SGT-400 starting values)",
+    "air_flow_kg_s": 39.22,
+    "pressure_ratio": 17.1,
+    "tit_C": 1280.0,
+    "compressor_polytropic_eff": 0.89,
+    "turbine_eff": 0.8685,
+    "combustor_dp": 0.04,
+    "mechanical_efficiency": 0.99,
+    "generator_efficiency": 0.98,
+    "ngv": 0.07,
+    "rotor": 0.05,
+    "pt": 0.03,
+    "port": 0.6,
+    "gg_speed_limit": 1.03,
+    "generator_MVA": 20.0,
+    "power_factor": 0.8,
+}
+
+
+def design_engine(design=None):
+    """An EngineModel built forwards from design values (missing keys take DESIGN_DEFAULTS)."""
+    from ..components import Combustor, Compressor, Turbine
+    from ..cycle import Cooling, TwinShaftCycle
+    from ..fuel import natural_gas
+    from ..offdesign import Generator, Limits, TwinShaftEngine
+
+    d = {**DESIGN_DEFAULTS, **(design or {})}
+    cycle = TwinShaftCycle(
+        Compressor(d["pressure_ratio"], d["compressor_polytropic_eff"]),
+        Combustor(natural_gas(), d["tit_C"] + 273.15, dp_frac=d["combustor_dp"]),
+        Turbine(d["turbine_eff"]),
+        Turbine(d["turbine_eff"]),
+        cooling=Cooling(ngv=d["ngv"], rotor=d["rotor"], pt=d["pt"], port=d["port"]),
+        mechanical_efficiency=d["mechanical_efficiency"],
+        generator_efficiency=d["generator_efficiency"],
+    )
+    sgt = load_datasheet()  # map choice and the VIGV and bleed schedules are generic; limits come from `d`
+    cmap, limits, controls = offdesign_options(sgt.get("offdesign"), d["pressure_ratio"])
+    limits = Limits(
+        gg_speed=d["gg_speed_limit"],
+        gg_corrected_speed=d["gg_speed_limit"],
+        generator=Generator(d["generator_MVA"], d["power_factor"], limits.generator.derate),
+    )
+    engine = TwinShaftEngine(cycle, d["air_flow_kg_s"], compressor_map=cmap, limits=limits, controls=controls)
+    return EngineModel(d, None, engine)
+
+
+def design_section(model):
+    d, engine = model.datasheet, model.engine
+    iso = engine.run(ISO)
+    labels = {
+        "name": "Engine name",
+        "air_flow_kg_s": "Air flow (kg/s)",
+        "pressure_ratio": "Pressure ratio",
+        "tit_C": "Turbine entry temperature (°C)",
+        "compressor_polytropic_eff": "Compressor polytropic efficiency",
+        "turbine_eff": "Turbine isentropic efficiency",
+        "combustor_dp": "Combustor pressure loss (fraction)",
+        "mechanical_efficiency": "Mechanical efficiency",
+        "generator_efficiency": "Generator efficiency",
+        "ngv": "NGV cooling air (fraction of inlet flow)",
+        "rotor": "HP rotor cooling air (fraction)",
+        "pt": "Power turbine cooling air (fraction)",
+        "port": "Interstage bleed position",
+        "gg_speed_limit": "Gas generator speed limit (relative)",
+        "generator_MVA": "Generator rating (MVA)",
+        "power_factor": "Power factor",
+    }
+    inputs = {labels[k]: d[k] for k in labels}
+    perf = pd.DataFrame(
+        [
+            {"Quantity": "Electrical output", "Unit": "MW", "Value": iso.electrical_power / 1e6},
+            {"Quantity": "Heat rate (LHV)", "Unit": "kJ/kWh", "Value": iso.heat_rate},
+            {"Quantity": "Thermal efficiency (LHV)", "Unit": "%", "Value": 100 * iso.thermal_efficiency},
+            {"Quantity": "Fuel heat input (LHV)", "Unit": "MW", "Value": iso.heat_input / 1e6},
+            {"Quantity": "Exhaust flow", "Unit": "kg/s", "Value": iso.exhaust.w},
+            {"Quantity": "Exhaust temperature", "Unit": "°C", "Value": iso.exhaust.t - 273.15},
+            {"Quantity": "Specific power", "Unit": "kJ/kg", "Value": iso.electrical_power / 1e3 / d["air_flow_kg_s"]},
+            {"Quantity": "Surge margin", "Unit": "%", "Value": 100 * iso.info["surge_margin"]},
+        ]
+    )
+    stations = station_table(iso)
+    key = [
+        ("ISO output", f"{iso.electrical_power / 1e6:.2f} MW"),
+        ("ISO heat rate", f"{iso.heat_rate:,.0f} kJ/kWh"),
+        ("ISO thermal efficiency", f"{100 * iso.thermal_efficiency:.1f} %"),
+        ("Exhaust temperature", f"{iso.exhaust.t - 273.15:.1f} °C"),
+        ("Exhaust flow", f"{iso.exhaust.w:.2f} kg/s"),
+        ("Specific power", f"{iso.electrical_power / 1e3 / d['air_flow_kg_s']:.0f} kJ/kg"),
+        ("Surge margin at ISO", f"{100 * iso.info['surge_margin']:.1f} %"),
+    ]
+    fig, (ax1, ax2) = figure(10, 3.8, 2)
+    s = stations[stations["Station"] != "0"]
+    x = np.arange(len(s))
+    ax1.plot(x, s["Temperature (°C)"], "o-", color=NAVY)
+    ax1.set_xticks(x, s["Station"])
+    style(ax1, "Gas-path temperature at ISO", "Station", "Temperature (°C)")
+    ax2.plot(x, s["Pressure (bar)"], "o-", color=BLUE)
+    ax2.set_xticks(x, s["Station"])
+    style(ax2, "Gas-path pressure at ISO", "Station", "Pressure (bar)")
+    return Section(
+        "engine",
+        "Engine design",
+        inputs,
+        key,
+        {"ISO performance": perf, "ISO stations": stations},
+        {"ISO gas path": fig},
+        [
+            "Design mode: the engine is calculated forwards from the values on the left. They start at the "
+            "values that reproduce the published SGT-400 13 MW rating (12.9 MW, 10,294 kJ/kWh).",
+            "The compressor map is a generic public map scaled to the pressure ratio, so off-design studies "
+            "follow your design.",
+        ],
+    )
 
 
 STATION_NAMES = {
