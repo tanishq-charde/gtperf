@@ -1,0 +1,304 @@
+<script>
+const SPEC = __SPEC__;
+const BAKED = __BAKED__;
+const WHEEL_B64 = "__WHEEL__";
+const COMPUTE_PY = __COMPUTE__;
+const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.3/full/";
+
+const PAGES = [
+ {
+  "id": "overview",
+  "name": "Overview",
+  "title": "Gas turbine performance tool",
+  "lede": "A design and performance calculator for industrial gas turbines and turbofans. Define an engine on the Engine design study, down to its compressor and turbine stages; the tool builds it, calculates its component maps and runs it through site rating, part load, acceptance testing and fleet monitoring.",
+  "about": "<h4>Scope</h4><p>The tool runs the gtperf Python toolkit in the browser. Every result is calculated from the sidebar inputs; nothing is read from a table of answers. Inputs have no range limits.</p><h4>Workflow</h4><p>Calculate the engine on Engine design first. Every other gas turbine study uses the engine last calculated there; a study run on an earlier design is marked ⚠ until it is recalculated. Run every study calculates all six in sequence.</p><h4>Starting values</h4><p>The inputs start at values that reproduce the published Siemens SGT-400 13 MW rating (12.9 MW, 10,294 kJ/kWh at ISO), so the first result can be checked against a real engine. Change any of them and the engine becomes your own design.</p><h4>Studies</h4><p><b>Engine design:</b> cycle, ISO rating and calculated compressor and turbine maps. <b>Site performance:</b> rating at site conditions and correction curves. <b>Part load and emissions:</b> turn-down with DLE NOx and CO. <b>Pass-off test:</b> acceptance test analysis with measurement uncertainty. <b>Fleet monitoring:</b> fault detection and isolation from service data. <b>Turbofan:</b> a separate two-spool aero engine with thrust lapse, LTO NOx and noise.</p>"
+ },
+ {
+  "id": "engine",
+  "name": "Engine design",
+  "n": 1,
+  "title": "Engine design",
+  "lede": "Define the cycle and the compressor and turbine stage design. The tool builds the engine forwards from these values, generates its component maps by stage stacking and reports the ISO rating. All other gas turbine studies use this engine.",
+  "about": "<h4>Model</h4><p>A twin-shaft industrial gas turbine: compressor, combustor, HP turbine driving the compressor, and a free power turbine driving the generator, with cooling air bled to the turbines. Air flow, pressure ratio, turbine inlet temperature (TIT) and component efficiencies fix every gas path station at ISO conditions (15 °C, 1.01325 bar, 60 % RH), and from them output, heat rate, efficiency and exhaust conditions.</p><h4>Component maps</h4><p>Maps are generated, not scaled from a stored map. The design work is divided over the stages; stage loading ψ and flow coefficient φ set each stage's blade speed and velocity triangles, and blade angles and annulus areas are then frozen. Off design, each stage is solved in turn with incidence losses. A compressor row stalls at the set diffusion factor; a turbine row chokes at its peak mass flux.</p><h4>Key sensitivities</h4><p>TIT and pressure ratio govern output and efficiency. Stage loading governs surge margin: more highly loaded stages give a narrower map and less margin. The variable vane schedule governs part-speed stability.</p>"
+ },
+ {
+  "id": "site",
+  "name": "Site performance",
+  "n": 2,
+  "title": "Site performance",
+  "lede": "Rate the engine at site ambient temperature, altitude, humidity and inlet and exhaust losses. The study quantifies each effect on output and produces correction curves against ambient temperature.",
+  "about": "<h4>Method</h4><p>The engine is matched off design on its own maps at the site conditions: the operating point where compressor, turbines and shafts agree on flow, work and speed. Base load holds TIT at its design value unless gas generator speed or generator capability limits first.</p><h4>Ambient effects</h4><p>Hot air is less dense, so mass flow and output fall while compressor work rises. Altitude reduces flow with ambient pressure. Inlet and exhaust losses reduce the pressure available to the turbines. Degradation inputs represent a fouled or worn engine.</p><h4>Correction curves</h4><p>Output, heat rate and exhaust flow relative to ISO against ambient temperature, as published on an engine datasheet. The curves change slope where the controlling limit changes.</p>"
+ },
+ {
+  "id": "partload",
+  "name": "Part load & emissions",
+  "n": 3,
+  "title": "Part load and emissions",
+  "lede": "Turn the engine down from base load and predict heat rate, temperatures and dry low-emissions (DLE) NOx and CO at each load, including the minimum load that meets the emissions limits.",
+  "about": "<h4>Method</h4><p>At each load step TIT is reduced until electrical output meets the demand, with the engine matched on its own maps.</p><h4>Emissions</h4><p>NOx rises steeply with flame temperature; CO rises as the flame approaches lean blow-out at low load. Air staging redistributes combustor air at part load to hold flame temperature. The minimum compliant load is where NOx or CO first exceeds its limit. The NOx limit applies above 70 % load, as in the EU Medium Combustion Plant Directive.</p>"
+ },
+ {
+  "id": "passoff",
+  "name": "Pass-off test",
+  "n": 4,
+  "title": "Pass-off test",
+  "lede": "Analyse a factory acceptance test of the engine: data validation, correction to guarantee conditions and a pass or fail decision for each guarantee with its measurement uncertainty, following ASME PTC 22 and ISO 2314.",
+  "about": "<h4>Test data</h4><p>Test data is synthetic. The engine runs at the test-day conditions with a hidden health change, every instrument has a hidden random error, and the selected sensor faults are injected. Because the true performance is known, the analysis can be checked against it.</p><h4>Analysis</h4><p>Validation rejects stuck, spiking, drifting and disagreeing sensors and checks point stability. Results are corrected model-based: the engine model is run at test and guarantee conditions and the measured value is scaled by the ratio (shifted by the difference for temperatures). Exhaust flow comes from a heat balance.</p><h4>Uncertainty and decision</h4><p>Uncertainty is evaluated by GUM (JCGM 100) and Monte Carlo (JCGM 101), with calibration errors shared across test points and noise independent per point. Each guarantee is judged on the corrected value and its 95 % uncertainty.</p>"
+ },
+ {
+  "id": "fleet",
+  "name": "Fleet monitoring",
+  "n": 5,
+  "title": "Fleet monitoring",
+  "lede": "Simulate a fleet in service with fouling, washes and injected faults, and evaluate the monitoring: which faults it detects, how quickly, and whether gas path analysis isolates the correct cause.",
+  "about": "<h4>Service data</h4><p>Each engine is simulated snapshot by snapshot with varying ambient, compressor fouling recovered by washes, sensor noise and the selected faults. Cycling dispatch adds part-load operation, which makes faults harder to see.</p><h4>Monitoring</h4><p>Each snapshot is compared with the engine model's expected values at the same conditions. The deltas are tracked with control charts; when a shift is detected, gas path analysis matches its signature to a cause: compressor, HP turbine, power turbine, inlet or a sensor.</p>"
+ },
+ {
+  "id": "turbofan",
+  "name": "Turbofan",
+  "n": 6,
+  "title": "Turbofan",
+  "lede": "Design a two-spool separate-exhaust turbofan from its cycle and stage values, size it for cruise thrust and run it off design on its generated maps: thrust lapse, ICAO LTO NOx and noise source levels.",
+  "about": "<h4>Design</h4><p>Independent of the gas turbine on the other pages. The cycle values fix the cruise design point and the cruise thrust sets the air flow. Fan, booster, HPC, HPT and LPT maps are generated by stage stacking, as on Engine design.</p><h4>Off design</h4><p>At take-off TET the engine is matched at sea level and over a grid of altitude and Mach number. Where a spool would exceed its highest calculated speed line no match exists and the curve ends.</p><h4>LTO NOx</h4><p>The four ICAO modes are run as operating points: take-off 100 % for 0.7 min, climb 85 % for 2.2 min, approach 30 % for 4.0 min, taxi and idle 7 % for 26 min. EI NOx comes from a severity correlation on combustor inlet pressure, temperature and humidity, scaled by the index at severity 1. Dp/Foo is compared with CAEP/6 and CAEP/8.</p><h4>Noise</h4><p>Fan broadband noise (Heidmann) and jet mixing noise (Lighthill eighth-power law) at take-off and approach, as source levels at 1 m, for design comparison rather than certification EPNdB.</p>"
+ }
+];
+const CAPTIONS = {
+ "ISO gas path": "Temperature and pressure at each gas path station at ISO conditions. <b>(a)</b> Temperature: the rise through the compressor, the combustor step to TIT, and the drop through the HP and power turbines. <b>(b)</b> Pressure: the compressor delivery pressure and its expansion through the turbines. Together they show where the cycle's work is done.",
+ "Compressor map": "Pressure ratio against corrected flow for each speed line, with efficiency contours. The red surge line is the stability boundary; dotted lines have a blade row past its diffusion limit. The operating line and the base-load points at −20, 15 and 45 °C show where the engine runs. The vertical gap to the surge line is the surge margin.",
+ "HP turbine map": "HP turbine characteristic against pressure ratio, one line per corrected speed, with the engine's operating points. <b>(a)</b> Flow capacity: it rises to choke and then stays flat, which fixes the gas generator's flow. <b>(b)</b> Efficiency: its peak, and how far each operating point sits from it.",
+ "Power turbine map": "Power turbine characteristic against pressure ratio, one line per corrected speed, with the engine's operating points. <b>(a)</b> Flow capacity, which sets the pressure split between the HP and power turbines. <b>(b)</b> Efficiency, which sets how much shaft power the exhaust energy gives at each condition.",
+ "Correction factors": "The change in output from ISO to site, broken down by cause: ambient temperature, altitude, humidity, inlet and exhaust losses and fuel. The largest bar is the effect worth acting on, for example with inlet cooling on a hot site.",
+ "Correction curves": "Output, heat rate and exhaust flow relative to ISO against ambient temperature, with the site marked. Shaded regions are speed or generator limited rather than TIT limited. These are the curves used to correct test and site data to rated conditions.",
+ "Part-load performance": "Engine response to turn-down. <b>(a)</b> Heat rate against load: efficiency falls as TIT and pressure ratio drop away from design. <b>(b)</b> TIT and exhaust temperature against load: the exhaust temperature shows how much heat is available for recovery at part load.",
+ "Emissions against load": "DLE NOx and CO against load with the limits. NOx falls with flame temperature as load drops; CO rises sharply near lean blow-out. The lowest load where both are within their limits is the minimum emissions-compliant load.",
+ "Uncertainty budget": "Each source's share of the variance in corrected power: instrument calibration (systematic), instrument noise at each test point (random) and correction-model scatter. The largest contributors are where a better instrument, more test points or a better model would most reduce the test uncertainty.",
+ "Results vs truth": "Error of each corrected result relative to the hidden true value, in units of its expanded uncertainty U95. Points within ±1 confirm that the correction and uncertainty analysis recovered the truth.",
+ "Exhaust thermocouples": "Exhaust thermocouple readings through the test. Red traces were excluded by validation; the remaining spread shows the circumferential temperature profile behind the burners.",
+ "Engine trends": "Measured deltas from the model's expected values for the selected engine, with washes (green), fault onsets (amber) and alarms (red). <b>(a)</b> Output: falls with compressor fouling and component damage; a wash recovers the fouling. <b>(b)</b> Exhaust gas temperature (EGT): rises as turbine efficiency or capacity is lost. <b>(c)</b> Fuel flow: at base load it follows output, so a step here alone points to the fuel meter. A shift in one delta only points to a sensor; a consistent pattern across all three points to a component, which gas path analysis then names.",
+ "Thrust lapse": "Net thrust at take-off TET against altitude for several flight Mach numbers. Thrust falls with air density as altitude rises and with ram drag as speed rises. A curve that ends early is where a spool reaches its top speed line.",
+ "LTO NOx by mode": "ICAO landing and take-off cycle. <b>(a)</b> EI NOx at each mode: highest at take-off, where combustor inlet pressure and temperature peak. <b>(b)</b> NOx mass at each mode: EI × fuel flow × time, where the long taxi time weighs against the low idle index.",
+ "LTO NOx against the standard": "Dp/Foo, NOx mass over the LTO cycle per kN of rated thrust, against rated overall pressure ratio, with the CAEP/6 and CAEP/8 limit lines. The engine's margin to the line decides certification.",
+ "Fan map": "Fan pressure ratio against corrected flow for each speed line, with the surge line and the LTO and cruise operating points. The margin at approach and idle shows whether the fan stays stable at low thrust.",
+ "HPC map": "HPC pressure ratio against corrected flow for each speed line, with the surge line and the LTO and cruise operating points. The variable vanes keep the low-speed lines stable at idle and approach.",
+ "HPT map": "HPT characteristic against pressure ratio with the LTO and cruise operating points. <b>(a)</b> Flow capacity: the HPT runs choked across the flight envelope. <b>(b)</b> Efficiency at each operating point.",
+ "LPT map": "LPT characteristic against pressure ratio with the LTO and cruise operating points. <b>(a)</b> Flow capacity, which sets the fan spool's matching. <b>(b)</b> Efficiency, which sets the power available to the fan at each condition.",
+ "Noise sources": "Fan broadband and jet mixing source levels at take-off and approach. A high bypass ratio lowers jet velocity and so jet noise, which leaves the fan as the dominant source."
+};
+const STUDIES = ["engine","site","partload","passoff","fleet","turbofan"];
+const byId = Object.fromEntries(PAGES.map(p => [p.id, p]));
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $ = s => document.querySelector(s);
+function toast(t){const e=$("#toast");e.textContent=t;e.classList.add("show");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("show"),2200)}
+
+// ---- inputs ---------------------------------------------------------------------------------------
+function fieldsOf(study){ return SPEC[study].groups.flatMap(g => g[2]); }
+function defaultOf(f){ const [, , kind, a, b] = f; return kind === "chips" ? a.slice(0, b) : kind === "sel" ? b : a; }
+function defaults(study){ return Object.fromEntries(fieldsOf(study).map(f => [f[0], defaultOf(f)])); }
+const state = Object.fromEntries(STUDIES.map(s => [s, defaults(s)]));
+let engineDesign = JSON.parse(JSON.stringify(state.engine));   // the design the studies use: set by Calculate on Engine design
+const results = {}, errors = {}, busy = {};
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+function field(study, f){
+  const [k, label, kind, a] = f, v = state[study][k], id = `f-${study}-${k}`, changed = !same(v, defaultOf(f)) ? " changed" : "";
+  if (kind === "chips")
+    return `<div class="row full"><label>${esc(label)}</label><div class="chips" data-study="${study}" data-k="${k}">${a.map(x=>`<span class="chip${v.includes(x)?" on":""}" data-v="${esc(x)}">${esc(x)}</span>`).join("")}</div></div>`;
+  let ctl;
+  if (kind === "sel") ctl = `<select id="${id}" class="${changed}" data-study="${study}" data-k="${k}">${a.map(x=>`<option value="${esc(x)}"${x===v?" selected":""}>${esc(x)}</option>`).join("")}</select>`;
+  else if (kind === "num") ctl = `<input id="${id}" class="${changed}" type="number" step="${f[4]}" value="${v}" data-study="${study}" data-k="${k}">`;
+  else ctl = `<input id="${id}" class="${changed}" type="text" value="${esc(v)}" data-study="${study}" data-k="${k}">`;
+  return `<div class="row"><label for="${id}">${esc(label)}</label>${ctl}</div>`;
+}
+function inputsPanel(study){
+  const sp = SPEC[study], openNow = window._open || {};
+  return sp.groups.map(([t, open, fs]) => `<details data-g="${esc(t)}"${(openNow[study+t] ?? open)?" open":""}><summary>${esc(t)}</summary>${fs.map(f=>field(study,f)).join("")}</details>`).join("")
+    + `<button class="btn primary" id="go" onclick="calc('${study}')">${esc(sp.button)}</button>`
+    + `<button class="reset" onclick="resetInputs('${study}')">Reset to the starting values</button>`;
+}
+function onInput(e){
+  const t = e.target, study = t.dataset.study, k = t.dataset.k; if (!study) return;
+  const f = fieldsOf(study).find(x => x[0] === k), kind = f[2];
+  let v = t.value;
+  if (kind === "num") { v = parseFloat(v); if (Number.isNaN(v)) return; }
+  if (kind === "sel") { const opt = f[3].find(x => String(x) === v); v = opt; }
+  state[study][k] = v; t.classList.toggle("changed", !same(v, defaultOf(f)));
+}
+function onChip(e){
+  const c = e.target.closest(".chip"), box = e.target.closest(".chips"); if (!c || !box || !box.dataset.study) return;
+  c.classList.toggle("on");
+  const f = fieldsOf(box.dataset.study).find(x => x[0] === box.dataset.k);
+  state[box.dataset.study][box.dataset.k] = f[3].filter(x => box.querySelector(`.chip[data-v="${CSS.escape(String(x))}"]`).classList.contains("on"));
+}
+function resetInputs(study){ state[study] = defaults(study); render(); toast("Inputs reset to the starting values"); }
+
+// ---- the calculator (Pyodide) ---------------------------------------------------------------------
+function setCalc(text, cls){ const e = $("#calcstate"); e.textContent = text; e.className = "calc " + (cls || ""); }
+async function loadPy(){
+  setCalc("Calculator loading (first time up to a minute)");
+  await new Promise((res, rej) => { const s = document.createElement("script"); s.src = PYODIDE + "pyodide.js"; s.onload = res; s.onerror = () => rej(new Error("could not download Python: check the internet connection")); document.head.appendChild(s); });
+  const py = await loadPyodide({indexURL: PYODIDE});
+  await py.loadPackage(["numpy", "scipy", "pandas", "matplotlib"]);
+  py.FS.writeFile("/tmp/gtperf.whl", Uint8Array.from(atob(WHEEL_B64), c => c.charCodeAt(0)));
+  py.runPython("import site, zipfile\nzipfile.ZipFile('/tmp/gtperf.whl').extractall(site.getsitepackages()[0])");
+  py.runPython(COMPUTE_PY);
+  setCalc("Calculator ready", "ready");
+  return py;
+}
+const pyReady = loadPy();
+pyReady.catch(e => setCalc("Calculator offline: " + e.message, "err"));
+
+async function compute(study){
+  const p = state[study], des = study === "turbofan" ? {} : engineDesign;
+  const key = JSON.stringify([study, p, des]);
+  if (BAKED[key]) return {ok: true, section: BAKED[key]};
+  const py = await pyReady;
+  await new Promise(r => setTimeout(r, 40));   // let the spinner paint before Python takes the thread
+  return JSON.parse(py.globals.get("run")(study, JSON.stringify(p), JSON.stringify(des)));
+}
+async function calc(study){
+  if (study === "engine") engineDesign = JSON.parse(JSON.stringify(state.engine));
+  busy[study] = true; delete errors[study]; render();
+  try {
+    const r = await compute(study);
+    if (r.ok) results[study] = {section: r.section, design: JSON.stringify(engineDesign)};
+    else errors[study] = r.error;
+  } catch (e) { errors[study] = e.message; }
+  busy[study] = false; render();
+}
+async function runAll(){
+  window._runall = 0; render();
+  for (const s of STUDIES){
+    window._runall = STUDIES.indexOf(s) + 1; render();
+    busy[s] = true; delete errors[s];
+    try { const r = await compute(s); if (r.ok) results[s] = {section: r.section, design: JSON.stringify(engineDesign)}; else errors[s] = r.error; }
+    catch (e) { errors[s] = e.message; }
+    busy[s] = false;
+  }
+  window._runall = null; toast("Every study calculated"); render();
+}
+const stale = s => results[s] && s !== "engine" && s !== "turbofan" && results[s].design !== JSON.stringify(engineDesign);
+
+// ---- results --------------------------------------------------------------------------------------
+const NUM = /^([+\-−]?[\d,]*\.?\d+)\s*(.*)$/;
+function statsHtml(rows){
+  return `<div class="stats">${rows.map(([l,v])=>{
+    v = v.replace(/\s+(PASS|FAIL)$/,"").trim(); const m = v.match(NUM);
+    const d = m ? m[2].match(/^(.*?)\s*(\(.*\))$/) : null, unit = d ? d[1] : m ? m[2] : "";
+    const val = m ? `${esc(m[1])}<span class="u">${esc(unit)}</span>` : esc(v);
+    return `<div class="stat"><div class="v${m?"":" word"}">${val}</div>${d?`<div class="dl">${esc(d[2].slice(1,-1))}</div>`:""}<div class="l">${esc(l)}</div></div>`;}).join("")}</div>`;
+}
+function fmt(v){ if (typeof v !== "number") return v ?? ""; const a=Math.abs(v); return a>=1000? v.toLocaleString("en-GB",{maximumFractionDigits:1}) : a>=1? +v.toFixed(3) : +v.toPrecision(4); }
+function checksHtml(t){
+  const c = t.cols, iv = c.indexOf("Verdict"), ir = c.indexOf("Result"), il = c.indexOf("Limit"), ival = c.indexOf("Value");
+  return `<div class="checks">${t.rows.map(r=>{const ok=String(r[iv]).toUpperCase().startsWith("PASS");
+    return `<div class="check"><span class="tag ${ok?"ok":"bad"}">${ok?"✓ Pass":"✗ Fail"}</span><span>${esc(r[ir])}: <b>${esc(fmt(r[ival]))}</b></span><span class="need">limit ${esc(String(fmt(r[il])).replace(">=","≥").replace("<=","≤"))}</span></div>`}).join("")}</div>`;
+}
+function save(name, text, type){ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+function csv(t){ const q = v => { v = v ?? ""; v = String(v); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; };
+  return [t.cols.map(q).join(","), ...t.rows.map(r => r.map(q).join(","))].join("\n"); }
+function saveSvg(study, name){ save(`${slug(results[study].section.title)}_${slug(name)}.svg`, results[study].section.figures[name], "image/svg+xml"); }
+function saveCsv(study, name){ save(`${slug(results[study].section.title)}_${slug(name)}.csv`, csv(results[study].section.tables[name]), "text/csv"); }
+
+function tableHtml(t, cols, q){
+  const idx = t.cols.map((c,i)=>i).filter(i=>cols.has(t.cols[i]));
+  const rows = t.rows.filter(r => !q || r.some(v => String(v).toLowerCase().includes(q.toLowerCase())));
+  return `<div class="tablebox"><table><thead><tr>${idx.map(i=>`<th>${esc(t.cols[i])}</th>`).join("")}</tr></thead><tbody>${
+    rows.map(r=>`<tr>${idx.map(i=>`<td class="${typeof r[i]==="number"?"n":""}">${esc(fmt(r[i]))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+function tables(study){
+  const s = results[study].section, names = Object.keys(s.tables), box = $("#tbl"); if (!box) return;
+  const draw = () => {
+    const t = s.tables[$("#tsel").value], chips = $("#tcols");
+    if (chips.dataset.t !== $("#tsel").value){ chips.dataset.t = $("#tsel").value; chips.innerHTML = t.cols.map(c=>`<span class="chip on">${esc(c)}</span>`).join(""); }
+    const on = new Set([...chips.querySelectorAll(".chip.on")].map(e=>e.textContent));
+    $("#tout").innerHTML = tableHtml(t, on, $("#tq").value);
+  };
+  box.innerHTML = `<div class="bar"><h3>Tables</h3><select id="tsel">${names.map(n=>`<option>${esc(n)}</option>`).join("")}</select></div>
+    <div class="filters"><div><label>Columns</label><div class="chips" id="tcols"></div></div><div><label for="tq">Filter rows (text match)</label><input type="text" id="tq" placeholder="e.g. exhaust"></div></div>
+    <div id="tout"></div><p><button class="btn small" id="tcsv">Download this table (CSV)</button></p>`;
+  $("#tsel").onchange = draw; $("#tq").oninput = draw;
+  $("#tcols").onclick = e => { if (e.target.classList.contains("chip")){ e.target.classList.toggle("on"); draw(); } };
+  $("#tcsv").onclick = () => saveCsv(study, $("#tsel").value);
+  draw();
+}
+function charts(study){
+  const s = results[study].section, names = Object.keys(s.figures), box = $("#figs"); if (!box || !names.length) return;
+  const draw = () => { const v = $("#csel").value; const show = v === "All charts" ? names : [v];
+    $("#cout").innerHTML = show.map(n=>`<figure>${s.figures[n]}<figcaption><span>${esc(n)}</span><button class="btn small" data-svg="${esc(n)}">Download SVG</button></figcaption>${CAPTIONS[n] ? `<p class="figtext">${CAPTIONS[n]}</p>` : ""}</figure>`).join(""); };
+  box.innerHTML = `<div class="bar"><h3>Charts</h3><select id="csel"><option>All charts</option>${names.map(n=>`<option>${esc(n)}</option>`).join("")}</select></div><div id="cout"></div>`;
+  $("#csel").onchange = draw; $("#cout").onclick = e => { const b = e.target.closest("[data-svg]"); if (b) saveSvg(study, b.dataset.svg); };
+  draw();
+}
+function studyDownloads(study){
+  const s = results[study].section;
+  return `<div class="downloads"><button class="btn" onclick="Object.keys(results['${study}'].section.figures).forEach(n=>saveSvg('${study}',n))">All charts (SVG)</button>
+    <button class="btn" onclick="Object.keys(results['${study}'].section.tables).forEach(n=>saveCsv('${study}',n))">All tables (CSV)</button></div>`;
+}
+function results_(p){
+  const sp = SPEC[p.id];
+  if (busy[p.id]) return `<p class="working"><span class="spin"></span>${$("#calcstate").classList.contains("ready") || BAKED_HIT(p.id) ? "Calculating…" : "Loading the calculator, then calculating (the first time takes up to a minute)…"}</p>`;
+  const err = errors[p.id] ? `<p class="err">The calculation did not work for these values.<br><small>${esc(errors[p.id])}. Move the changed values back toward the starting values and try again.</small></p>` : "";
+  if (!results[p.id]) return err + `<div class="empty">Set the inputs on the left and press ${esc(sp.button)}.</div>`;
+  const s = results[p.id].section;
+  const acc = s.tables.Acceptance && s.tables.Acceptance.cols.includes("Verdict");
+  const verdict = s.key.find(k=>k[0]==="Verdict"), key = s.key.filter(k=>k[0]!=="Verdict");
+  const nextP = PAGES[PAGES.indexOf(p)+1];
+  return `${err}${stale(p.id)?`<p class="stale">Calculated with an earlier engine design. Press ${esc(sp.button)} to update.</p>`:""}
+    <h2>${p.n}. ${esc(s.title)}</h2>
+    ${verdict?`<span class="verdict ${verdict[1]==="PASS"?"ok":"bad"}">${verdict[1]==="PASS"?"TEST PASSED":"TEST FAILED"}</span>`:""}
+    ${statsHtml(key)}${acc?checksHtml(s.tables.Acceptance):""}
+    ${s.notes.map(n=>`<p class="note">${esc(n)}</p>`).join("")}
+    <div id="figs"></div><div id="tbl"></div>
+    <div class="bar"><h3>Download this study</h3></div>${studyDownloads(p.id)}
+    ${nextP?`<p class="next"><button class="btn" onclick="go('${nextP.id}')">Next: ${esc(nextP.name)} →</button></p>`:""}`;
+}
+function BAKED_HIT(study){ const des = study === "turbofan" ? {} : engineDesign; return !!BAKED[JSON.stringify([study, state[study], des])]; }
+
+// ---- pages ----------------------------------------------------------------------------------------
+const FLOW = `<svg class="flow" viewBox="0 0 760 330" role="img" aria-label="The engine design feeds every study; all studies feed the downloads">
+  <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#12224A" stroke="none"/></marker></defs>
+  ${[["Your inputs",10,140],["Engine design",170,140]].map(([t,x,y])=>`<rect x="${x}" y="${y}" width="130" height="46"/><text x="${x+65}" y="${y+28}">${t}</text>`).join("")}
+  ${[["Site performance",30],["Part load & emissions",90],["Pass-off test",150],["Fleet monitoring",210],["Turbofan",270]].map(([t,y])=>`<rect x="370" y="${y}" width="170" height="40"/><text x="455" y="${y+25}">${t}</text>`).join("")}
+  <rect class="dark" x="610" y="140" width="140" height="46"/><text class="light" x="680" y="161">Downloads</text><text class="light" x="680" y="178" style="font-size:11px;font-family:var(--sans)">SVG · CSV</text>
+  <path d="M140 163H168"/>${[50,110,170,230].map(y=>`<path d="M300 163C335 163 335 ${y} 368 ${y}"/>`).join("")}
+  ${[50,110,170,230,290].map(y=>`<path d="M540 ${y}C575 ${y} 575 163 608 163"/>`).join("")}
+</svg>`;
+function aboutHtml(p, open){
+  return `<details class="about"${open ? " open" : ""}><summary>About this ${p.id === "overview" ? "tool" : "study"}</summary>${p.about}</details>`;
+}
+function overview(){
+  const done = STUDIES.filter(s => results[s]);
+  const prog = window._runall != null ? `<p><span class="spin"></span>Calculating ${esc(byId[STUDIES[Math.max(0, window._runall - 1)]].name)} (${window._runall} of 6)…</p>` : "";
+  return `<div id="results">${prog}${aboutHtml(byId.overview, true)}
+    <h2>How the studies link</h2>${FLOW}
+    ${done.length?`<h2 style="margin-top:2rem">Calculated so far</h2>${done.map(s=>`<h3>${esc(byId[s].name)}${stale(s)?" ⚠":""}</h3>${statsHtml(results[s].section.key.filter(k=>k[0]!=="Verdict").slice(0,4))}<button class="btn small" onclick="go('${s}')">Open ${esc(byId[s].name)} →</button>`).join("")}`:""}
+  </div>`;
+}
+function overviewSide(){
+  return `<details open><summary>Studies</summary><div class="studies">${STUDIES.map(s=>`<button class="btn" onclick="go('${s}')">${esc(byId[s].name)}<small>${results[s]?(stale(s)?"⚠":"✓"):"→"}</small></button>`).join("")}</div></details>
+    <details open><summary>Quick start</summary><p class="hint">Calculates every study with the inputs as they are now. With the starting values it is instant.</p><button class="btn primary" onclick="runAll()">Run every study</button></details>`;
+}
+function render(){
+  const id = location.hash.slice(1) || "overview", p = byId[id] || PAGES[0];
+  document.querySelectorAll("#side details[data-g]").forEach(d => { (window._open ||= {})[$("#side").dataset.study + d.dataset.g] = d.open; });
+  $("#title").textContent = p.title; $("#lede").textContent = p.lede; $("#study").value = p.id;
+  $("#engname").textContent = engineDesign.name; $("#enguse").hidden = p.id === "turbofan" || !same(engineDesign, defaults("engine"));
+  [...$("#study").options].forEach(o => { const q = byId[o.value]; o.textContent = q.name + (results[q.id] ? (stale(q.id) ? "  ⚠ recalculate" : "  ✓") : ""); });
+  const side = $("#side"), keepScroll = side.parentElement.scrollTop;
+  side.dataset.study = p.id;
+  side.innerHTML = p.id === "overview" ? overviewSide() : inputsPanel(p.id);
+  side.parentElement.scrollTop = keepScroll;
+  $("#page").innerHTML = p.id === "overview" ? overview() : `${aboutHtml(p, !results[p.id])}<div id="results">${results_(p)}</div>`;
+  if (results[p.id] && !busy[p.id]) { charts(p.id); tables(p.id); }
+  document.title = (p.id === "overview" ? "" : p.name + " · ") + "GTPerf";
+}
+function go(id){ if (location.hash.slice(1) === id) render(); else location.hash = id; scrollTo({top:0, behavior:"smooth"}); }
+$("#study").innerHTML = PAGES.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("");
+$("#study").onchange = e => go(e.target.value);
+$("#side").addEventListener("input", onInput); $("#side").addEventListener("change", onInput); $("#side").addEventListener("click", onChip);
+addEventListener("hashchange", render);
+render();
+</script>
+</body>
+</html>

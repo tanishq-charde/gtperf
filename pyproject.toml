@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gtperf"
-version = "1.2.0"
+version = "1.3.0"
 description = "Gas turbine performance toolkit: cycle modelling, site prediction, test validation and fleet analysis"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,8 +13,8 @@ dependencies = ["numpy", "scipy", "pandas"]
 [project.optional-dependencies]
 plots = ["matplotlib"]  # also needed for pass-off report figures
 excel = ["openpyxl"]
-gui = ["streamlit>=1.40", "matplotlib", "openpyxl", "python-pptx", "fpdf2"]
-dev = ["pytest", "pytest-cov", "ruff", "matplotlib", "openpyxl", "cantera", "streamlit>=1.40", "python-pptx", "fpdf2"]
+gui = ["matplotlib"]  # the web tool's calculation layer (gtperf.app.core)
+dev = ["pytest", "pytest-cov", "ruff", "matplotlib", "openpyxl", "cantera"]
 
 [project.scripts]
 gtperf = "gtperf.cli:main"
@@ -26,7 +26,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 "gtperf.data" = ["*.toml"]
 "gtperf.data.maps" = ["*.json", "NOTICE"]
-"gtperf.app.assets" = ["*.png", "*.css"]
+"gtperf.app.assets" = ["*.png"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

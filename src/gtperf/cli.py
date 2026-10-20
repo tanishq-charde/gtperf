@@ -150,6 +150,9 @@ def turbofan_offdesign_table(engine, points):
     return rows
 
 
+WEB_TOOL = "https://tanishq-charde.github.io/gtperf-app/"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="gtperf", description="Gas turbine performance toolkit")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -172,8 +175,7 @@ def main(argv=None):
     fan.add_argument("--json", action="store_true", help="print the summary as JSON")
     fan.add_argument("--offdesign", action="store_true",
                      help="match the engine off design at the [offdesign] points (default: a few flight conditions)")
-    gui = sub.add_parser("gui", help="open the GTPerf graphical interface (beta) in a browser")
-    gui.add_argument("--port", type=int, default=8501)
+    sub.add_parser("gui", help="open the GTPerf web tool in a browser")
     excel = sub.add_parser("excel", help="write the Excel site performance tool for a calibrated engine")
     excel.add_argument("datasheet")
     excel.add_argument("output", help="workbook to write, e.g. site_tool.xlsx")
@@ -181,12 +183,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.command == "gui":
-        import subprocess
-        import sys
+        import webbrowser
 
-        app = Path(__file__).resolve().parent / "app" / "ui.py"
-        return subprocess.call([sys.executable, "-m", "streamlit", "run", str(app), "--server.port", str(args.port),
-                                "--browser.gatherUsageStats", "false"])
+        print(f"GTPerf web tool: {WEB_TOOL}")
+        webbrowser.open(WEB_TOOL)
+        return
     if args.command == "calibrate":
         d, c, _ = engine_from_datasheet(args.datasheet)
         print(f"{d.get('name', 'engine')}\n")

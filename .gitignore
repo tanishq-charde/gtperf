@@ -8,3 +8,5 @@ dist/
 coverage.xml
 .ruff_cache/
 .claude/
+web/dist/
+web/wheel/

@@ -1,0 +1,954 @@
+{
+ "engine": {
+  "button": "Calculate",
+  "groups": [
+   [
+    "Engine",
+    true,
+    [
+     [
+      "name",
+      "Engine name",
+      "text",
+      "My engine (SGT-400 starting values)"
+     ]
+    ]
+   ],
+   [
+    "Air and compression",
+    true,
+    [
+     [
+      "air_flow_kg_s",
+      "Air flow (kg/s)",
+      "num",
+      39.22,
+      0.1
+     ],
+     [
+      "pressure_ratio",
+      "Pressure ratio",
+      "num",
+      17.1,
+      0.1
+     ],
+     [
+      "compressor_polytropic_eff",
+      "Compressor polytropic efficiency",
+      "num",
+      0.89,
+      0.005
+     ]
+    ]
+   ],
+   [
+    "Combustion and turbines",
+    true,
+    [
+     [
+      "tit_C",
+      "Turbine entry temperature (°C)",
+      "num",
+      1280,
+      5
+     ],
+     [
+      "turbine_eff",
+      "Turbine isentropic efficiency",
+      "num",
+      0.8685,
+      0.005
+     ],
+     [
+      "combustor_dp",
+      "Combustor pressure loss (fraction)",
+      "num",
+      0.04,
+      0.005
+     ]
+    ]
+   ],
+   [
+    "Turbine cooling air",
+    false,
+    [
+     [
+      "ngv",
+      "NGV cooling (fraction of inlet flow)",
+      "num",
+      0.07,
+      0.005
+     ],
+     [
+      "rotor",
+      "HP rotor cooling (fraction)",
+      "num",
+      0.05,
+      0.005
+     ],
+     [
+      "pt",
+      "Power turbine cooling (fraction)",
+      "num",
+      0.03,
+      0.005
+     ],
+     [
+      "port",
+      "Interstage bleed position (0 to 1)",
+      "num",
+      0.6,
+      0.05
+     ]
+    ]
+   ],
+   [
+    "Shaft and generator",
+    false,
+    [
+     [
+      "mechanical_efficiency",
+      "Mechanical efficiency",
+      "num",
+      0.99,
+      0.005
+     ],
+     [
+      "generator_efficiency",
+      "Generator efficiency",
+      "num",
+      0.98,
+      0.005
+     ],
+     [
+      "gg_speed_limit",
+      "Gas generator speed limit (relative)",
+      "num",
+      1.03,
+      0.01
+     ],
+     [
+      "generator_MVA",
+      "Generator rating (MVA)",
+      "num",
+      20,
+      1
+     ],
+     [
+      "power_factor",
+      "Power factor",
+      "num",
+      0.8,
+      0.01
+     ]
+    ]
+   ],
+   [
+    "Compressor stages (sets its map)",
+    false,
+    [
+     [
+      "comp_stages",
+      "Number of stages",
+      "num",
+      11,
+      1
+     ],
+     [
+      "comp_loading",
+      "Stage loading ψ = Δh/U²",
+      "num",
+      0.4,
+      0.01
+     ],
+     [
+      "comp_flow_coeff",
+      "Flow coefficient φ = Va/U",
+      "num",
+      0.5,
+      0.01
+     ],
+     [
+      "comp_reaction",
+      "Stage reaction",
+      "num",
+      0.5,
+      0.05
+     ],
+     [
+      "comp_solidity",
+      "Blade solidity (chord / pitch)",
+      "num",
+      1.5,
+      0.05
+     ],
+     [
+      "comp_df_limit",
+      "Diffusion factor at stall",
+      "num",
+      0.6,
+      0.01
+     ]
+    ]
+   ],
+   [
+    "Variable vanes",
+    false,
+    [
+     [
+      "vane_rows",
+      "Variable rows (VIGV + stators)",
+      "num",
+      3,
+      1
+     ],
+     [
+      "vane_closed",
+      "VIGV angle when fully closed (°)",
+      "num",
+      -35,
+      1
+     ],
+     [
+      "vane_open_speed",
+      "Fully open above corrected speed (relative)",
+      "num",
+      0.95,
+      0.01
+     ],
+     [
+      "vane_closed_speed",
+      "Fully closed below corrected speed (relative)",
+      "num",
+      0.85,
+      0.01
+     ]
+    ]
+   ],
+   [
+    "HP turbine stages (sets its map)",
+    false,
+    [
+     [
+      "hpt_stages",
+      "Number of stages",
+      "num",
+      2,
+      1
+     ],
+     [
+      "hpt_loading",
+      "Stage loading ψ = Δh/U²",
+      "num",
+      1.5,
+      0.05
+     ],
+     [
+      "hpt_flow_coeff",
+      "Flow coefficient φ = Va/U",
+      "num",
+      0.6,
+      0.01
+     ],
+     [
+      "hpt_reaction",
+      "Stage reaction",
+      "num",
+      0.5,
+      0.05
+     ]
+    ]
+   ],
+   [
+    "Power turbine stages (sets its map)",
+    false,
+    [
+     [
+      "pt_stages",
+      "Number of stages",
+      "num",
+      2,
+      1
+     ],
+     [
+      "pt_loading",
+      "Stage loading ψ = Δh/U²",
+      "num",
+      1.3,
+      0.05
+     ],
+     [
+      "pt_flow_coeff",
+      "Flow coefficient φ = Va/U",
+      "num",
+      0.6,
+      0.01
+     ],
+     [
+      "pt_reaction",
+      "Stage reaction",
+      "num",
+      0.5,
+      0.05
+     ]
+    ]
+   ]
+  ]
+ },
+ "site": {
+  "button": "Calculate",
+  "groups": [
+   [
+    "Site",
+    true,
+    [
+     [
+      "name",
+      "Site name",
+      "text",
+      "Hot site"
+     ],
+     [
+      "t",
+      "Ambient temperature (°C)",
+      "num",
+      35,
+      1
+     ],
+     [
+      "rh",
+      "Relative humidity (%)",
+      "num",
+      40,
+      1
+     ],
+     [
+      "alt",
+      "Altitude (m)",
+      "num",
+      0,
+      50
+     ],
+     [
+      "dpi",
+      "Inlet loss (mbar)",
+      "num",
+      10,
+      0.5
+     ],
+     [
+      "dpe",
+      "Exhaust loss (mbar)",
+      "num",
+      25,
+      0.5
+     ]
+    ]
+   ],
+   [
+    "Degradation",
+    false,
+    [
+     [
+      "wc",
+      "Compressor flow capacity (%)",
+      "num",
+      0,
+      0.1
+     ],
+     [
+      "ec",
+      "Compressor efficiency (points)",
+      "num",
+      0,
+      0.1
+     ],
+     [
+      "et",
+      "Turbine efficiency (points)",
+      "num",
+      0,
+      0.1
+     ]
+    ]
+   ],
+   [
+    "Correction curves",
+    false,
+    [
+     [
+      "lo",
+      "Lowest ambient (°C)",
+      "num",
+      -20,
+      5
+     ],
+     [
+      "hi",
+      "Highest ambient (°C)",
+      "num",
+      45,
+      5
+     ],
+     [
+      "curves",
+      "Curves to plot",
+      "chips",
+      [
+       "Output / ISO",
+       "Heat rate / ISO",
+       "Exhaust flow / ISO"
+      ],
+      3
+     ]
+    ]
+   ]
+  ]
+ },
+ "partload": {
+  "button": "Calculate",
+  "groups": [
+   [
+    "Conditions",
+    true,
+    [
+     [
+      "t",
+      "Ambient temperature (°C)",
+      "num",
+      15,
+      1
+     ],
+     [
+      "rh",
+      "Relative humidity (%)",
+      "num",
+      60,
+      1
+     ]
+    ]
+   ],
+   [
+    "Load sweep",
+    true,
+    [
+     [
+      "lo",
+      "Lowest load (%)",
+      "num",
+      30,
+      5
+     ],
+     [
+      "step",
+      "Load step (%)",
+      "num",
+      10,
+      5
+     ],
+     [
+      "staging",
+      "DLE air staging",
+      "sel",
+      [
+       "On",
+       "Off"
+      ],
+      "On"
+     ]
+    ]
+   ],
+   [
+    "Limits",
+    false,
+    [
+     [
+      "nox",
+      "NOx limit (mg/Nm³ at 15 % O₂)",
+      "num",
+      50,
+      5
+     ],
+     [
+      "co",
+      "CO limit (mg/Nm³)",
+      "num",
+      100,
+      5
+     ]
+    ]
+   ]
+  ]
+ },
+ "passoff": {
+  "button": "Run the test",
+  "groups": [
+   [
+    "Test conditions",
+    true,
+    [
+     [
+      "t",
+      "Test-day temperature (°C)",
+      "num",
+      8,
+      0.5
+     ],
+     [
+      "p",
+      "Barometric pressure (mbar)",
+      "num",
+      1002,
+      0.5
+     ],
+     [
+      "rh",
+      "Relative humidity (%)",
+      "num",
+      78,
+      1
+     ],
+     [
+      "n",
+      "Number of test points",
+      "num",
+      2,
+      1
+     ]
+    ]
+   ],
+   [
+    "Sensor faults to inject",
+    false,
+    [
+     [
+      "faults",
+      "Faults",
+      "chips",
+      [
+       "Exhaust thermocouple 7 drifts +15 K",
+       "Exhaust thermocouple 3 reads 30 K high",
+       "Inlet RTD 3 stuck",
+       "Power meter spikes",
+       "Fuel flow meter reads 1 % high"
+      ],
+      4
+     ]
+    ]
+   ],
+   [
+    "Hidden engine health",
+    false,
+    [
+     [
+      "wc",
+      "Compressor flow change (%)",
+      "num",
+      -0.6,
+      0.1
+     ],
+     [
+      "ec",
+      "Compressor efficiency change (points)",
+      "num",
+      -0.4,
+      0.1
+     ],
+     [
+      "seed",
+      "Random seed",
+      "num",
+      4,
+      1
+     ]
+    ]
+   ],
+   [
+    "Guarantee",
+    false,
+    [
+     [
+      "pmin",
+      "Output at least (MW)",
+      "num",
+      12.65,
+      0.01
+     ],
+     [
+      "hmax",
+      "Heat rate at most (kJ/kWh)",
+      "num",
+      10500,
+      10
+     ],
+     [
+      "tmax",
+      "Exhaust temperature at most (°C)",
+      "num",
+      570,
+      1
+     ],
+     [
+      "mc",
+      "Monte Carlo trials",
+      "num",
+      500,
+      100
+     ]
+    ]
+   ]
+  ]
+ },
+ "fleet": {
+  "button": "Simulate and monitor",
+  "groups": [
+   [
+    "Fleet",
+    true,
+    [
+     [
+      "n",
+      "Engines",
+      "num",
+      4,
+      1
+     ],
+     [
+      "days",
+      "Days in service",
+      "num",
+      240,
+      10
+     ],
+     [
+      "interval",
+      "Days between snapshots",
+      "num",
+      3,
+      1
+     ],
+     [
+      "dispatch",
+      "Dispatch",
+      "sel",
+      [
+       "Base load",
+       "Cycling (part load)"
+      ],
+      "Base load"
+     ],
+     [
+      "seed",
+      "Random seed",
+      "num",
+      11,
+      1
+     ]
+    ]
+   ],
+   [
+    "Injected faults",
+    false,
+    [
+     [
+      "faults",
+      "Faults",
+      "chips",
+      [
+       "HP turbine blade damage",
+       "HP turbine nozzle erosion",
+       "Inlet filter failure",
+       "Exhaust thermocouple drift",
+       "Power meter error",
+       "Fuel meter error"
+      ],
+      5
+     ]
+    ]
+   ],
+   [
+    "Engine to plot",
+    false,
+    [
+     [
+      "plot",
+      "Engine",
+      "num",
+      1,
+      1
+     ]
+    ]
+   ]
+  ]
+ },
+ "turbofan": {
+  "button": "Calculate",
+  "groups": [
+   [
+    "Cycle",
+    true,
+    [
+     [
+      "bpr",
+      "Bypass ratio",
+      "num",
+      10,
+      0.5
+     ],
+     [
+      "fpr",
+      "Fan pressure ratio (bypass)",
+      "num",
+      1.5,
+      0.05
+     ],
+     [
+      "fcpr",
+      "Fan root + booster pressure ratio",
+      "num",
+      2.4,
+      0.1
+     ],
+     [
+      "hpc",
+      "HPC pressure ratio",
+      "num",
+      17,
+      0.5
+     ],
+     [
+      "tet",
+      "Cruise TET (K)",
+      "num",
+      1600,
+      10
+     ]
+    ]
+   ],
+   [
+    "Cruise point",
+    true,
+    [
+     [
+      "thr",
+      "Cruise thrust (kN)",
+      "num",
+      22,
+      0.5
+     ],
+     [
+      "alt",
+      "Cruise altitude (m)",
+      "num",
+      10668,
+      100
+     ],
+     [
+      "mach",
+      "Cruise Mach number",
+      "num",
+      0.78,
+      0.01
+     ]
+    ]
+   ],
+   [
+    "Off-design and environment",
+    false,
+    [
+     [
+      "to_tet",
+      "Take-off TET (K)",
+      "num",
+      1750,
+      10
+     ],
+     [
+      "lapse",
+      "Thrust lapse",
+      "sel",
+      [
+       "Calculate",
+       "Skip"
+      ],
+      "Calculate"
+     ],
+     [
+      "env",
+      "LTO NOx and noise",
+      "sel",
+      [
+       "Calculate",
+       "Skip"
+      ],
+      "Calculate"
+     ]
+    ]
+   ],
+   [
+    "Combustor NOx",
+    false,
+    [
+     [
+      "ei_nox",
+      "NOx index at severity 1 (g/kg fuel)",
+      "num",
+      32,
+      1
+     ]
+    ]
+   ],
+   [
+    "Fan and booster stages (set their maps)",
+    false,
+    [
+     [
+      "fan_stages",
+      "Fan stages",
+      "num",
+      1,
+      1
+     ],
+     [
+      "fan_loading",
+      "Fan stage loading ψ",
+      "num",
+      0.4,
+      0.01
+     ],
+     [
+      "fan_flow_coeff",
+      "Fan flow coefficient φ",
+      "num",
+      0.5,
+      0.01
+     ],
+     [
+      "booster_stages",
+      "Booster stages",
+      "num",
+      3,
+      1
+     ],
+     [
+      "booster_loading",
+      "Booster stage loading ψ",
+      "num",
+      0.35,
+      0.01
+     ],
+     [
+      "booster_flow_coeff",
+      "Booster flow coefficient φ",
+      "num",
+      0.5,
+      0.01
+     ]
+    ]
+   ],
+   [
+    "HPC stages (sets its map)",
+    false,
+    [
+     [
+      "hpc_stages",
+      "Number of stages",
+      "num",
+      10,
+      1
+     ],
+     [
+      "hpc_loading",
+      "Stage loading ψ",
+      "num",
+      0.4,
+      0.01
+     ],
+     [
+      "hpc_flow_coeff",
+      "Flow coefficient φ",
+      "num",
+      0.5,
+      0.01
+     ],
+     [
+      "hpc_vane_rows",
+      "Variable rows (VIGV + stators)",
+      "num",
+      4,
+      1
+     ],
+     [
+      "hpc_vane_closed",
+      "VIGV angle when fully closed (°)",
+      "num",
+      -40,
+      1
+     ],
+     [
+      "hpc_vane_open_speed",
+      "Fully open above corrected speed",
+      "num",
+      0.95,
+      0.01
+     ],
+     [
+      "hpc_vane_closed_speed",
+      "Fully closed below corrected speed",
+      "num",
+      0.65,
+      0.01
+     ]
+    ]
+   ],
+   [
+    "Turbine stages (set their maps)",
+    false,
+    [
+     [
+      "hpt_stages",
+      "HPT stages",
+      "num",
+      2,
+      1
+     ],
+     [
+      "hpt_loading",
+      "HPT stage loading ψ",
+      "num",
+      1.5,
+      0.05
+     ],
+     [
+      "hpt_flow_coeff",
+      "HPT flow coefficient φ",
+      "num",
+      0.6,
+      0.01
+     ],
+     [
+      "lpt_stages",
+      "LPT stages",
+      "num",
+      5,
+      1
+     ],
+     [
+      "lpt_loading",
+      "LPT stage loading ψ",
+      "num",
+      2.5,
+      0.05
+     ],
+     [
+      "lpt_flow_coeff",
+      "LPT flow coefficient φ",
+      "num",
+      0.8,
+      0.01
+     ]
+    ]
+   ]
+  ]
+ }
+}

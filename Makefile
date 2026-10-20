@@ -1,5 +1,5 @@
 # Same checks as .github/workflows/ci.yml, for running before a commit.
-.PHONY: check lint test coverage examples excel matlab requirements
+.PHONY: check lint test coverage examples excel matlab requirements web
 
 check: lint coverage
 
@@ -27,3 +27,8 @@ matlab:
 
 requirements:
 	python -m gtperf.requirements
+
+# The web tool: bake the starting results, then build the single-page app into web/dist/index.html.
+web:
+	python3 web/bake.py
+	python3 web/build.py web/dist/index.html

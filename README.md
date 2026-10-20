@@ -2,7 +2,9 @@
 
 A Python toolkit for gas turbine performance: cycle modelling, site performance prediction, pass-off test validation and fleet trend analysis, for industrial and aero engines.
 
-**Status:** v1.2.0, plus the GTPerf GUI in beta ([GTPerf GUI](#gtperf-gui-beta-in-progress)). All six phases done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics; tooling and reporting; two-spool turbofan, MATLAB port and certification note), and v1.2 works through every limitation listed in v1.1 (see [What v1.2 adds](#what-v12-adds)). Private.
+**Status:** v1.3.0. All six phases are done (design-point cycle; off-design and site performance; pass-off test validation; fleet analytics; tooling and reporting; two-spool turbofan, MATLAB port and certification note). v1.2 worked through every limitation listed in v1.1 ([What v1.2 adds](#what-v12-adds)), and v1.3 adds design mode with calculated component maps and the [GTPerf web tool](#gtperf-web-tool) ([What v1.3 adds](#what-v13-adds)).
+
+**Try it:** [tanishq-charde.github.io/gtperf-app](https://tanishq-charde.github.io/gtperf-app/) runs the whole package in your browser. The [user manual](docs/GTPerf_User_Manual.pdf) explains every page.
 
 ## What phase 1 does
 
@@ -71,33 +73,27 @@ v1.1 listed twelve limitations. Each one is now modelled, checked or measured, a
 - **Turbofan off-design and transients.** Fan, booster, HPC and turbine maps, working lines, thrust lapse with altitude and Mach number, thrust, N1, TET and fuel-flow settings, an idle to take-off acceleration with spool inertias, split cooling and a convergent-divergent nozzle option.
 - **Emissions and noise.** A DLE combustor model (Zeldovich NOx, CO burnout, air staging) calibrated to the SGT-400's published emissions, checked against the EU Medium Combustion Plant Directive across load; LTO-cycle NOx (Dp/Foo) for the turbofan against the CAEP/6 and CAEP/8 standards; and fan broadband (Heidmann) and jet mixing (Lighthill and von Glahn) source levels. See [docs/environment.md](docs/environment.md).
 
-## GTPerf GUI (beta, in progress)
+## What v1.3 adds
+
+- **Design mode.** An engine is built forwards from its design values (air flow, pressure ratio, TIT, component efficiencies, cooling flows, shaft and generator limits) instead of being fitted to a datasheet. The starting values reproduce the published SGT-400 13 MW rating (12.89 MW and 10,299 kJ/kWh against 12.9 MW and 10,294 kJ/kWh), and any of them can be changed.
+- **Maps calculated by stage stacking.** [mapgen.py](src/gtperf/mapgen.py) generates the compressor and turbine maps from blade-stage inputs instead of scaling a stored map. The design work is divided over the stages; stage loading ψ and flow coefficient φ fix each stage's blade speed and velocity triangles; blade angles and annulus areas are then frozen. Off design each stage is solved in turn with incidence losses. A compressor row stalls at a set Lieblein diffusion factor, the surge line is the peak pressure rise or rear-stage stall, and the variable vane schedule is part of the map. A turbine row chokes at its peak mass flux, and a row whose design exit is supersonic is sized as just choked. The twin shaft and all five turbofan components (fan, booster, HPC, HPT, LPT) run on these maps.
+- **LTO NOx from the operating points.** The four ICAO landing and take-off modes are matched as real operating points on the turbofan's maps, and EI NOx comes from a severity correlation on combustor inlet pressure, temperature and humidity, giving Dp/Foo against CAEP/6 and CAEP/8.
+- **Robust matching.** The limit search starts from the corrected speed limit when the TIT-limited point lies past it, steps onto limits it overshoots, and treats a failed evaluation as a failed step, so edited designs, cold days, wide correction-curve ranges and cycling fleets converge. Inputs that cannot describe an engine (an efficiency outside 0 to 1, vanes still part closed at design speed) get a plain message.
+- **The GTPerf web tool** replaces the Streamlit interface and its PDF, PowerPoint and Excel exports.
+
+## GTPerf web tool
 
 <img src="src/gtperf/app/assets/logo.png" alt="GTPerf" width="260">
 
-A point-and-click front end for the toolkit. Each study has its own page (Engine, Site performance, Part load & emissions, Pass-off test, Fleet monitoring, Turbofan), and the pages are linked: the engine you calibrate on the Engine page feeds site, part load, pass-off and fleet, and changing it marks their results as needing a recalculation. You enter values, press Calculate, and read the key results, charts and tables, with filters for which charts to show and which table columns and rows to see.
+**[Open the tool](https://tanishq-charde.github.io/gtperf-app/)** · [User manual (PDF)](docs/GTPerf_User_Manual.pdf)
 
-Every result can be downloaded, per section or all together from Reports & downloads:
+A single web page that runs this package in the browser through Pyodide, with nothing to install. The engine is designed on **Engine design** and every other gas turbine study uses it: **Site performance**, **Part load and emissions**, **Pass-off test** and **Fleet monitoring**. **Turbofan** designs a separate two-spool aero engine. Inputs sit in the sidebar and have no range limits; each study shows key figures, notes, charts with captions and labelled panels, and tables, and every chart and table downloads as SVG or CSV. A study run on an earlier engine design is flagged until it is recalculated.
 
-| Format | Holds |
-|---|---|
-| SVG (zip) | every chart as a vector file |
-| XLSX | a summary sheet of inputs and key results, then one sheet per table |
-| PPTX | a cover, a key-results slide per section, a slide per chart and the main table |
-| PDF | inputs, key results, notes, charts and tables for each section |
-| CSV (zip) | every table |
+![Overview](docs/figures/web_overview.png)
+![Site performance](docs/figures/web_site.png)
+![Calculated compressor map](docs/figures/web_compressor_map.png)
 
-```bash
-pip install -e ".[gui]"
-gtperf gui            # opens http://localhost:8501
-```
-
-![Home page](docs/figures/gui_home.png)
-![Part load and emissions](docs/figures/gui_part_load.png)
-![Fleet monitoring](docs/figures/gui_fleet.png)
-![Reports and downloads](docs/figures/gui_reports.png)
-
-Beta: the calculations are the tested toolkit functions, but the interface is new. Still to do: saving and reopening a whole session, comparing two engines side by side, and the remaining ideas in the ideas list.
+The page is built from [web/](web/): `head.html` (layout and style), `script.html` (the page logic), `spec.json` (every input, its group and starting value), `compute.py` (runs a study and returns it as JSON, natively or in Pyodide) and `baked.json` (the starting results, so the first view is instant). `make web` bakes the starting results and writes `web/dist/index.html` with a wheel of this checkout embedded. `gtperf gui` opens the hosted tool.
 
 ## Quick start
 
@@ -279,7 +275,8 @@ The tests in `tests/` check:
 
 The v1.1 limitations are all addressed (see [What v1.2 adds](#what-v12-adds)). What is still true:
 
-- **No real engine data.** The NPSS maps are public research maps scaled to this engine, not the SGT-400's. The multi-point calibration, pass-off, fleet and fault-isolation studies run on synthetic data from a hidden "true" engine, so they demonstrate the methods, not this engine's numbers.
+- **Mean-line maps.** The calculated maps come from a one-dimensional stage-stacking model: fixed blade exit angles, incidence and dynamic-head loss scaling and a diffusion-factor stall limit, with no deviation, radial or tip-clearance effects. They show how a design's stage choices shape its map, not a validated map of a real compressor.
+- **No real engine data.** The NPSS maps used by the datasheet workflow are public research maps scaled to this engine, not the SGT-400's. The multi-point calibration, pass-off, fleet and fault-isolation studies run on synthetic data from a hidden "true" engine, so they demonstrate the methods, not this engine's numbers.
 - **Some inputs are calibrated or illustrative.** The DLE staging stop is set to give the published 30 % turndown, the turbofan NOx reference index is illustrative, the calibration certificates are made-up records, the ISO 6976 heating-value uncertainty comes from a worked example, and the exhaust swirl relation and the field T45 and P45 noise levels are assumptions.
 - **Noise is source levels only.** Fan broadband and jet mixing at 1 m, not certification EPNdB (no spectra, directivity, flight path, absorption or tone corrections), and fan tones are not modelled. The Heidmann constants were read from a scanned report.
 - **No aero CO model.** Turbofan emissions cover NOx and CO2 only.
@@ -295,6 +292,7 @@ The v1.1 limitations are all addressed (see [What v1.2 adds](#what-v12-adds)). W
 5. Tooling and reporting: Excel/VBA front end, CI, technical report and deck (done)
 6. Stretch: MATLAB port, two-spool aero cycle, requirements and certification note (done)
 7. v1.2: real maps, part load, multi-point calibration, sourced uncertainties, fault isolation, part-load fleet monitoring, turbofan off-design, emissions and noise (done)
-8. GTPerf GUI: linked study pages with SVG, XLSX, PPTX and PDF downloads (beta, in progress)
+8. GTPerf GUI: linked study pages (done in v1.2, replaced in v1.3)
+9. v1.3: design mode, maps calculated by stage stacking, LTO NOx from operating points, the GTPerf web tool and user manual (done)
 
 All data in this project is synthetic or from public sources.
