@@ -20,7 +20,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from matplotlib.category import StrCategoryFormatter  # noqa: E402
 from matplotlib.text import Text  # noqa: E402
-from matplotlib.ticker import FuncFormatter  # noqa: E402
+from matplotlib.ticker import FixedFormatter, FuncFormatter  # noqa: E402
 
 from ..cli import engine_from_config  # noqa: E402
 from ..cycle import ISO, Ambient  # noqa: E402
@@ -116,7 +116,7 @@ def latexify(fig):
         t.set_text(tex(t.get_text()))
     for ax in fig.axes:
         for axis in (ax.xaxis, ax.yaxis):
-            if isinstance(axis.get_major_formatter(), StrCategoryFormatter):
+            if isinstance(axis.get_major_formatter(), (StrCategoryFormatter, FixedFormatter, FuncFormatter)):
                 f = axis.get_major_formatter()
                 axis.set_major_formatter(FuncFormatter(lambda x, pos, f=f: tex(f(x, pos))))
                 axis.set_minor_locator(plt.NullLocator())
