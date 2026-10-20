@@ -209,14 +209,17 @@ class _Engine:
             out["generator capability"] = result.electrical_power / lim.generator.capability(ambient.t) - 1
         return out
 
-    def _solve_limited(self, evaluate, x_tit, tit_max, ambient, extra=None):
+    def _solve_limited(self, evaluate, x_tit, tit_max, ambient, extra=None, start=None):
         """Base load: start at the TIT limit, then while another limit is exceeded, hold the worst one and
         let TIT fall. `evaluate(x, tit)` returns (residuals, result, mech_speed); `x_tit` solves the gas path
         at the TIT limit. Returns (x, tit, control, result, speed)."""
         x = x_tit
-        _, result, speed = evaluate(x, tit_max)
         tit, control = tit_max, "temperature"
         held = []
+        if start:  # already holding a limit: start = (tit, limit name)
+            tit, control = start
+            held.append(control)
+        _, result, speed = evaluate(x, tit)
         for _ in range(6):
             values = self._limit_values(result, ambient, speed)
             if self._speed_limited():
@@ -253,7 +256,24 @@ class _Engine:
             return [*res, r.electrical_power / power - 1]
 
         frac = power / base.electrical_power
-        sol = root(residuals, [*x, tit / tit_ref * (0.75 + 0.25 * frac)], method="hybr", options={"xtol": 1e-11})
+        try:
+            sol = root(residuals, [*x, tit / tit_ref * (0.75 + 0.25 * frac)], method="hybr", options={"xtol": 1e-11})
+            ok = sol.success
+        except (RuntimeError, ValueError, ArithmeticError):
+            ok = False
+        if not ok:  # step down from base load, each step starting from the last
+            z = [*x, tit / tit_ref]
+            steps = max(2, int(math.ceil((1 - frac) / 0.05)))
+            for i in range(1, steps + 1):
+                target = base.electrical_power * (1 - (1 - frac) * i / steps)
+
+                def residuals_at(zz, target=target):
+                    res, r, _ = evaluate(zz[:-1], zz[-1] * tit_ref)
+                    return [*res, r.electrical_power / target - 1]
+
+                sol = root(residuals_at, z, method="hybr", options={"xtol": 1e-11})
+                _check(sol)
+                z = list(sol.x)
         _check(sol)
         x, tit = list(sol.x[:-1]), sol.x[-1] * tit_ref
         _, result, speed = evaluate(x, tit)
@@ -269,7 +289,7 @@ class TwinShaftEngine(_Engine):
     """Gas generator plus free power turbine at constant (synchronous) speed."""
 
     def __init__(self, cycle: TwinShaftCycle, air_flow, ambient=ISO, compressor_map=None, max_gg_speed=None,
-                 limits=None, controls=None):
+                 limits=None, controls=None, hpt_map=None, pt_map=None):
         limits = limits or Limits()
         if max_gg_speed is not None:
             limits = replace(limits, gg_speed=max_gg_speed)
@@ -283,6 +303,10 @@ class TwinShaftEngine(_Engine):
         self.pt_dh_design = _isentropic_drop(st["45"], st["5"].p)
         self.p45_design = st["45"].p
         self.comp_power_design = self.design.compressor_power
+        # optional turbine maps (TabulatedTurbineMap); without them, the ellipse law and blade-speed ratio
+        self.hpt_map, self.pt_map = hpt_map, pt_map
+        self.cap41_design, self.cap45_design = _capacity(st["41"]), _capacity(st["45"])
+        self.a41_design, self.a45_design = _sonic_temperature(st["41"]), _sonic_temperature(st["45"])
 
     def _speed_limited(self):
         return True
@@ -315,23 +339,35 @@ class TwinShaftEngine(_Engine):
         gg_speed = n * math.sqrt(_sonic_temperature(st["2"]) / self.a2_design)
         p45 = q45 * self.p45_design
 
-        dh = _isentropic_drop(s41, p45)
-        eff = self.hpt_eff_design * velocity_ratio_efficiency(gg_speed / math.sqrt(dh / self.hpt_dh_design))
+        if self.hpt_map:
+            n_hpt = gg_speed / math.sqrt(_sonic_temperature(s41) / self.a41_design)
+            eff = self.hpt_eff_design * self.hpt_map.efficiency(n_hpt, s41.p / p45)
+            hpt_flow = self.cap41_design * self.hpt_map.capacity(n_hpt, s41.p / p45)
+        else:
+            dh = _isentropic_drop(s41, p45)
+            eff = self.hpt_eff_design * velocity_ratio_efficiency(gg_speed / math.sqrt(dh / self.hpt_dh_design))
+            hpt_flow = self.hpt_capacity * ellipse_capacity(s41.p / p45)
         s44, hpt_power = Turbine(eff + health.turbine_eff_delta + health.hpt_eff_delta).run(s41, p45)
         s45 = mix(mix(s44, rotor), pt)
 
         exhaust = None
         for _ in range(2 if (exhaust_loss and self.controls.scale_losses) else 1):
             p5 = self._exhaust_pressure(ambient, exhaust_loss, exhaust)
-            dh = _isentropic_drop(s45, p5)
-            eff = self.pt_eff_design * velocity_ratio_efficiency(1.0 / math.sqrt(dh / self.pt_dh_design))
+            if self.pt_map:
+                n_pt = 1.0 / math.sqrt(_sonic_temperature(s45) / self.a45_design)
+                eff = self.pt_eff_design * self.pt_map.efficiency(n_pt, p45 / p5)
+                pt_flow = self.cap45_design * self.pt_map.capacity(n_pt, p45 / p5)
+            else:
+                dh = _isentropic_drop(s45, p5)
+                eff = self.pt_eff_design * velocity_ratio_efficiency(1.0 / math.sqrt(dh / self.pt_dh_design))
+                pt_flow = self.pt_capacity * ellipse_capacity(p45 / p5)
             s49, pt_power = Turbine(eff + health.turbine_eff_delta + health.pt_eff_delta).run(s45, p5)
             exhaust = mix(s49, handling)
 
         residuals = [
-            _capacity(s41) / (self.hpt_capacity * health.turbine_capacity_scale * ellipse_capacity(s41.p / p45)) - 1,
+            _capacity(s41) / (hpt_flow * health.turbine_capacity_scale) - 1,
             (hpt_power * c.mechanical_efficiency - comp_power) / self.comp_power_design,
-            _capacity(s45) / (self.pt_capacity * ellipse_capacity(p45 / p5)) - 1,
+            _capacity(s45) / pt_flow - 1,
         ]
         shaft = pt_power * c.mechanical_efficiency
         stations = {**st, "44": s44, "45": s45}
@@ -364,8 +400,16 @@ class TwinShaftEngine(_Engine):
 
         x0 = list(guess[:3]) if guess else [1.0, self.beta_design, ambient.p / self.design_ambient.p]
         sol = root(lambda x: evaluate(x, tit_max)[0], x0, method="hybr", options={"xtol": 1e-10})
+        start = None
+        if not sol.success:
+            # no match at the TIT limit (on a cold day it would lie beyond the speed limits and the map):
+            # start the limit search from the point at the corrected speed limit instead
+            sol, tit_held = self._at_corrected_speed_limit(evaluate, x0, tit_max)
+            if sol.success and tit_held <= tit_max:
+                start = (tit_held, "gas generator corrected speed")
         _check(sol)
-        x, tit_op, control, result, speed = self._solve_limited(evaluate, list(sol.x), tit_max, ambient)
+        x, tit_op, control, result, speed = self._solve_limited(evaluate, list(sol.x), tit_max, ambient,
+                                                                start=start)
         demand = self._demand(result, power, load)
         if demand is not None and demand < result.electrical_power * (1 - 1e-9):
             result.info = {"solution": tuple(x), "tit": tit_op}
@@ -377,6 +421,16 @@ class TwinShaftEngine(_Engine):
 
     def _g(self, n, beta):
         return self.compressor_map.point(n, beta, self._geometry(n)[0])[0]
+
+    def _at_corrected_speed_limit(self, evaluate, x0, tit_max):
+        """Gas path with corrected speed at its limit and TIT free. Returns (root result whose x is the
+        gas-path variables, TIT)."""
+        n = self.limits.gg_corrected_speed or self.max_gg_speed
+        sol = root(lambda z: evaluate([n, *z[:2]], z[2] * tit_max)[0], [x0[1], x0[2], 0.95], method="hybr",
+                   options={"xtol": 1e-10})
+        tit = sol.x[2] * tit_max
+        sol.x = np.array([n, *sol.x[:2]])
+        return sol, tit
 
 
 class SingleShaftEngine(_Engine):

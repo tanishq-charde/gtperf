@@ -22,6 +22,9 @@ Components:
   the turbines choked, whereas a real turbine unchokes as the ellipse law describes;
 - nozzles: throat (and C-D exit) areas fixed at design; each must pass the flow arriving at it.
 
+With `stage_designs`, all five maps are instead calculated from this engine's own design by stage stacking
+(`gtperf.mapgen`), and turbine flow capacity comes from those maps directly.
+
 Unknowns (all relative to design): LP and HP mechanical speeds, fan, booster and HPC R-lines, bypass
 ratio, HPT and LPT pressure ratios, and TET when the power setting is not TET itself. Residuals:
 booster and HPC corrected flow against their maps, HPT and LPT flow capacities, core and bypass nozzle
@@ -133,7 +136,7 @@ class TurbofanEngine:
     """Off-design turbofan built from a design-point `Turbofan` cycle, flight condition and air flow."""
 
     def __init__(self, cycle: Turbofan, air_flow, flight=SEA_LEVEL_STATIC, fan_map=None, booster_map=None,
-                 hpc_map=None, hpt_map=None, lpt_map=None, spools=None):
+                 hpc_map=None, hpt_map=None, lpt_map=None, spools=None, stage_designs=None):
         if cycle.ideal_nozzles or "ideal" in (n.kind for n in cycle.nozzles()):
             raise ValueError("off-design matching needs real nozzle throats, not ideal_nozzles")
         self.cycle = cycle
@@ -144,13 +147,28 @@ class TurbofanEngine:
         st = d.stations
         core_pr = cycle.fan_core_pr or cycle.fan_pr
         self.has_booster = core_pr != cycle.fan_pr
+        self.pr_hpt_design = st["41"].p / st["44"].p
+        self.pr_lpt_design = st["49"].p / st["5"].p
+        self.generated_maps = bool(stage_designs)
+        if stage_designs:  # maps calculated from this design by stage stacking (gtperf.mapgen)
+            from .mapgen import compressor_map, polytropic_from_isentropic, turbine_map
+
+            def poly(e, pr):
+                return e if cycle.compressor_polytropic else polytropic_from_isentropic(pr, e)
+
+            sd = stage_designs
+            fan_map = compressor_map(cycle.fan_pr, poly(cycle.fan_eff, cycle.fan_pr), sd["fan"])
+            if self.has_booster:
+                b_pr = core_pr / cycle.fan_pr
+                booster_map = compressor_map(b_pr, poly(cycle.booster_eff, b_pr), sd["booster"])
+            hpc_map = compressor_map(cycle.hpc_pr, poly(cycle.hpc_eff, cycle.hpc_pr), sd["hpc"])
+            hpt_map = turbine_map(self.pr_hpt_design, _turbine_eff(st["41"], st["44"]), sd["hpt"], st["41"].t)
+            lpt_map = turbine_map(self.pr_lpt_design, _turbine_eff(st["49"], st["5"]), sd["lpt"], st["49"].t)
         self.fan_map = fan_map or TabulatedCompressorMap.load("fan", cycle.fan_pr, design_beta=FAN_DESIGN_RLINE)
         self.booster_map = booster_map or (TabulatedCompressorMap.load("lpc", core_pr / cycle.fan_pr,
                                                                        design_beta=BOOSTER_DESIGN_RLINE)
                                            if self.has_booster else None)
         self.hpc_map = hpc_map or TabulatedCompressorMap.load("hpc", cycle.hpc_pr)
-        self.pr_hpt_design = st["41"].p / st["44"].p
-        self.pr_lpt_design = st["49"].p / st["5"].p
         self.hpt_map = hpt_map or TabulatedTurbineMap.load("hpt", self.pr_hpt_design)
         self.lpt_map = lpt_map or TabulatedTurbineMap.load("lpt", self.pr_lpt_design)
 
@@ -192,7 +210,10 @@ class TurbofanEngine:
         n = n_mech / math.sqrt(_sonic(s_in) / a_ref)
         eff = eff_design * tmap.efficiency(n, pr)
         out, power = Turbine(eff).run(s_in, s_in.p / pr)
-        cap = ellipse_capacity(pr) / ellipse_capacity(pr_design) * tmap.capacity(n, tmap.design_pr)
+        if self.generated_maps:
+            cap = tmap.capacity(n, pr)
+        else:
+            cap = ellipse_capacity(pr) / ellipse_capacity(pr_design) * tmap.capacity(n, tmap.design_pr)
         return out, power, _capacity(s_in) / (cap_ref * cap) - 1, n
 
     def evaluate(self, x, flight, inlet=None):
@@ -361,12 +382,13 @@ class TurbofanEngine:
             return {}, control, value
         raise ValueError(f"unknown control {control!r}")
 
-    def run(self, flight=None, tet=None, n1=None, thrust=None, fuel_flow=None, guess=None):
+    def run(self, flight=None, tet=None, n1=None, thrust=None, fuel_flow=None, guess=None, walk=True):
         """Steady operating point. Give at most one power setting: TET (K), N1 (mechanical speed relative
         to design), net thrust (N) or fuel flow (kg/s); the default is the design TET.
 
         `guess` is the `info["x"]` of a nearby converged point. Without it, or when it fails, the solver
         walks from the design point: first the flight condition at design TET, then the power setting.
+        With `walk=False` a failed solve from `guess` raises MatchError instead of walking from design.
         Returns a TurbofanResult whose `info` holds speeds, surge margins and matching variables.
         """
         flight = flight or self.design_flight
@@ -378,6 +400,8 @@ class TurbofanEngine:
         try:
             x = self._solve(flight, fixed, guess or self.x_design, rc, target)
         except MatchError:
+            if not walk:
+                raise
             x = self._walk(flight, control, value)
         return self._result(x, flight, control)
 

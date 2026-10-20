@@ -8,8 +8,9 @@ here appears in every download format without further work.
 from __future__ import annotations
 
 import copy
+import math
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import matplotlib
@@ -36,6 +37,8 @@ if not DEFAULT_DATASHEET.exists():
 # Brand colours: the logo's navy, one accent, and status colours
 NAVY, BLUE, RED, GREEN, AMBER = "#12224a", "#2a5fa8", "#b0302d", "#2f7d4f", "#b07a10"
 INK, INK2, GRID, SURFACE = "#000000", "#333333", "#d9d6cc", "none"
+MUTED = "#8a8679"
+POINT_COLOURS = (AMBER, GREEN, "#2a5fa8", RED, "#7a4fa3", "#3a8a8a", "#a0522d")
 SERIES = [NAVY, BLUE, "#7d9cc9", AMBER, RED, GREEN]
 
 # Charts look like LaTeX (pgfplots) figures: Computer Modern text, a full box, inward ticks on all sides.
@@ -211,7 +214,35 @@ DESIGN_DEFAULTS = {
     "gg_speed_limit": 1.03,
     "generator_MVA": 20.0,
     "power_factor": 0.8,
+    # stage design, from which the compressor and turbine maps are calculated
+    "comp_stages": 11,
+    "comp_loading": 0.40,
+    "comp_flow_coeff": 0.50,
+    "comp_reaction": 0.50,
+    "comp_solidity": 1.5,
+    "comp_df_limit": 0.60,
+    "vane_rows": 3,
+    "vane_closed": -35.0,
+    "vane_open_speed": 0.95,
+    "vane_closed_speed": 0.85,
+    "hpt_stages": 2,
+    "hpt_loading": 1.5,
+    "hpt_flow_coeff": 0.60,
+    "hpt_reaction": 0.50,
+    "pt_stages": 2,
+    "pt_loading": 1.3,
+    "pt_flow_coeff": 0.60,
+    "pt_reaction": 0.50,
 }
+
+
+def compressor_stages(d):
+    from ..mapgen import CompressorStages
+
+    return CompressorStages(int(d["comp_stages"]), d["comp_loading"], d["comp_flow_coeff"], d["comp_reaction"],
+                            d["comp_solidity"], d["comp_df_limit"], variable_rows=int(d["vane_rows"]),
+                            vane_closed=d["vane_closed"], vane_open_speed=d["vane_open_speed"],
+                            vane_closed_speed=d["vane_closed_speed"])
 
 
 def design_engine(design=None):
@@ -231,14 +262,24 @@ def design_engine(design=None):
         mechanical_efficiency=d["mechanical_efficiency"],
         generator_efficiency=d["generator_efficiency"],
     )
-    sgt = load_datasheet()  # map choice and the VIGV and bleed schedules are generic; limits come from `d`
-    cmap, limits, controls = offdesign_options(sgt.get("offdesign"), d["pressure_ratio"])
+    from ..mapgen import TurbineStages, compressor_map, turbine_map
+
+    sgt = load_datasheet()  # the handling bleed schedule and generator derate are generic; the rest is `d`
+    _, limits, controls = offdesign_options(sgt.get("offdesign"), d["pressure_ratio"])
     limits = Limits(
         gg_speed=d["gg_speed_limit"],
         gg_corrected_speed=d["gg_speed_limit"],
         generator=Generator(d["generator_MVA"], d["power_factor"], limits.generator.derate),
     )
+    cmap = compressor_map(d["pressure_ratio"], d["compressor_polytropic_eff"], compressor_stages(d))
+    controls = replace(controls, vigv=None)  # the vane schedule is part of the calculated map
     engine = TwinShaftEngine(cycle, d["air_flow_kg_s"], compressor_map=cmap, limits=limits, controls=controls)
+    st = engine.design.stations
+    for key, s_in, s_out, eff in (("hpt", st["41"], st["44"], engine.hpt_eff_design),
+                                  ("pt", st["45"], st["5"], engine.pt_eff_design)):
+        stages = TurbineStages(int(d[f"{key}_stages"]), d[f"{key}_loading"], d[f"{key}_flow_coeff"],
+                               d[f"{key}_reaction"])
+        setattr(engine, f"{key}_map", turbine_map(s_in.p / s_out.p, eff, stages, s_in.t))
     return EngineModel(d, None, engine)
 
 
@@ -262,6 +303,24 @@ def design_section(model):
         "gg_speed_limit": "Gas generator speed limit (relative)",
         "generator_MVA": "Generator rating (MVA)",
         "power_factor": "Power factor",
+        "comp_stages": "Compressor stages",
+        "comp_loading": "Compressor stage loading",
+        "comp_flow_coeff": "Compressor flow coefficient",
+        "comp_reaction": "Compressor stage reaction",
+        "comp_solidity": "Compressor blade solidity",
+        "comp_df_limit": "Compressor diffusion factor at stall",
+        "vane_rows": "Variable vane rows",
+        "vane_closed": "VIGV angle fully closed (°)",
+        "vane_open_speed": "Vanes fully open above corrected speed",
+        "vane_closed_speed": "Vanes fully closed below corrected speed",
+        "hpt_stages": "HP turbine stages",
+        "hpt_loading": "HP turbine stage loading",
+        "hpt_flow_coeff": "HP turbine flow coefficient",
+        "hpt_reaction": "HP turbine stage reaction",
+        "pt_stages": "Power turbine stages",
+        "pt_loading": "Power turbine stage loading",
+        "pt_flow_coeff": "Power turbine flow coefficient",
+        "pt_reaction": "Power turbine stage reaction",
     }
     inputs = {labels[k]: d[k] for k in labels}
     perf = pd.DataFrame(
@@ -296,20 +355,157 @@ def design_section(model):
     ax2.plot(x, s["Pressure (bar)"], "o-", color=BLUE)
     ax2.set_xticks(x, s["Station"])
     style(ax2, f"Gas-path pressure at ISO\n{gas_path}", "Station", "Pressure (bar)")
-    return Section(
-        "engine",
-        "Engine design",
-        inputs,
-        key,
-        {"ISO performance": perf, "ISO stations": stations},
-        {"ISO gas path": fig},
+    figures = {"ISO gas path": fig}
+    tables = {"ISO performance": perf, "ISO stations": stations}
+    notes = [
+        "Design mode: the engine is calculated forwards from the values on the left. They start at the "
+        "values that reproduce the published SGT-400 13 MW rating (12.9 MW, 10,294 kJ/kWh).",
+    ]
+    if getattr(engine.compressor_map, "info", None):
+        figures.update(_engine_maps(engine, d, iso, notes))
+        tables["Calculated compressor map"] = _map_table(engine.compressor_map)
+    return Section("engine", "Engine design", inputs, key, tables, figures, notes)
+
+
+def _map_table(cmap):
+    return pd.DataFrame(
         [
-            "Design mode: the engine is calculated forwards from the values on the left. They start at the "
-            "values that reproduce the published SGT-400 13 MW rating (12.9 MW, 10,294 kJ/kWh).",
-            "The compressor map is a generic public map scaled to the pressure ratio, so off-design studies "
-            "follow your design.",
-        ],
+            {"Corrected speed (%)": 100 * n, "Surge flow (relative)": w_s, "Surge pressure ratio": pr_s,
+             "Choke-end flow (relative)": w_e, "Blade row in rotating stall": "yes" if st else "no"}
+            for n, w_s, pr_s, w_e, st in cmap.info["surge"]
+        ]
     )
+
+
+def _turbine_point(engine, result):
+    """Corrected speeds and pressure ratios of the HP and power turbines at an operating point."""
+    from ..offdesign import _sonic_temperature
+
+    st = result.stations
+    s41, s44, s45 = st["41"], st["44"], st["45"]
+    pt_out = st.get("49", st["5"])
+    n_hpt = result.info["mechanical_speed"] / math.sqrt(_sonic_temperature(s41) / engine.a41_design)
+    n_pt = 1.0 / math.sqrt(_sonic_temperature(s45) / engine.a45_design)
+    return (n_hpt, s41.p / s44.p), (n_pt, s45.p / pt_out.p)
+
+
+def _engine_maps(engine, d, iso, notes):
+    """Compressor, HP turbine and power turbine maps calculated from the design, with base-load points
+    from -20 to 45 °C and the ISO part-load line."""
+    cmap = engine.compressor_map
+    ambient_runs, load_runs = [], []
+    for t in (-20, -10, 0, 15, 30, 45):
+        try:
+            ambient_runs.append((t, engine.run(Ambient(t + 273.15, ISO.p, 0.6))))
+        except RuntimeError:
+            pass
+    for load in (0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3):
+        try:
+            load_runs.append((load, engine.run(ISO, load=load)))
+        except RuntimeError:
+            pass
+    c = d
+    title = (f"Compressor map from stage stacking\nPR {c['pressure_ratio']:g}, {int(c['comp_stages'])} stages, "
+             f"loading {c['comp_loading']:g}, flow coefficient {c['comp_flow_coeff']:g}, "
+             f"{int(c['vane_rows'])} variable rows")
+    pts = [(f"Base load {t} °C", r.info["corrected_speed"], r.info["beta"], "o") for t, r in ambient_runs
+           if t in (-20, 15, 45)]
+    fig_c = compressor_map_figure(cmap, title, pts,
+                                  line=[(r.info["corrected_speed"], r.info["beta"]) for _, r in load_runs[::-1]]
+                                  + [(iso.info["corrected_speed"], iso.info["beta"])])
+    hpt_pts, pt_pts = [], []
+    for label, r, marker in [("ISO base load", iso, "o")] + [(f"{t} °C", r, "s") for t, r in ambient_runs
+                                                                if t in (-20, 45)] + \
+            [(f"{int(100 * f)} % load", r, "^") for f, r in load_runs if f in (0.6, 0.3)]:
+        (nh, ph), (np_, pp) = _turbine_point(engine, r)
+        hpt_pts.append((label, nh, ph, marker))
+        pt_pts.append((label, np_, pp, marker))
+    fig_h = turbine_map_figure(engine.hpt_map, f"HP turbine ({int(c['hpt_stages'])} stages, loading "
+                                                f"{c['hpt_loading']:g})", hpt_pts)
+    fig_p = turbine_map_figure(engine.pt_map, f"Power turbine ({int(c['pt_stages'])} stages, loading "
+                                               f"{c['pt_loading']:g})", pt_pts)
+    stalled = [r[0] for r in cmap.info["surge"] if r[4]]
+    notes.append(
+        "The compressor and turbine maps are calculated from your design by stage stacking, not scaled from "
+        "a stored map: each stage's velocity triangles, losses and blade-row stall are worked out from the "
+        "stage design values, with the variable vanes on their schedule. The design point sits on the 100 % "
+        f"speed line with {100 * iso.info['surge_margin']:.1f} % surge margin."
+    )
+    if stalled:
+        notes.append(
+            f"Below {100 * (max(stalled) + 0.05):.0f} % corrected speed a blade row is past its diffusion limit "
+            "along the whole speed line (dotted lines on the map): rotating stall territory, which more variable "
+            "stator rows or a lower stage loading would clear."
+        )
+    return {"Compressor map": fig_c, "HP turbine map": fig_h, "Power turbine map": fig_p}
+
+
+def compressor_map_figure(cmap, title, points=(), line=None):
+    """Speed lines, surge line and efficiency contours of a calculated compressor map, with operating points
+    [(label, n, beta, marker)] and an optional operating line [(n, beta), ...]."""
+    fig, ax = figure(7.5, 4.8)
+    beta = np.asarray(cmap.beta)
+    on = beta >= 1.0
+    wc, pr, eff = (np.asarray(a)[:, on] for a in (cmap.wc, cmap.pr, cmap.eff))
+    speeds = np.asarray(cmap.nc)
+    lowest = min([0.5] + [n - 0.05 for _, n, _, _ in points] + [n - 0.05 for n, _ in (line or [])])
+    show = speeds >= lowest - 1e-9
+    surge = {round(r[0], 3): r for r in cmap.info["surge"]}
+    levels = [lv for lv in np.arange(0.60, 0.95, 0.02) if eff[show].min() < lv < eff[show].max()]
+    if levels:  # contours on the map's own (speed, R-line) grid
+        cs = ax.contour(wc[show], pr[show], eff[show], levels=levels, colors=[MUTED], linewidths=0.6)
+        ax.clabel(cs, fmt=lambda v: f"{100 * v:.0f} %", fontsize=6)
+    for i in np.nonzero(show)[0]:
+        stalled = surge.get(round(speeds[i], 3), (0, 0, 0, 0, False))[4]
+        ax.plot(wc[i], pr[i], color=NAVY, lw=1.0, ls=":" if stalled else "-")
+        if round(speeds[i] * 100) % 10 == 0:
+            ax.annotate(f"{speeds[i]:.0%}".replace("%", " %"), (wc[i][-1], pr[i][-1]), fontsize=6, color=NAVY,
+                        xytext=(3, -3), textcoords="offset points")
+    ax.plot(wc[show, 0], pr[show, 0], color=RED, lw=1.8, label="Surge line")
+    if line:
+        pts = [cmap.point(n, b)[:2] for n, b in line]
+        ax.plot([p[0] for p in pts], [p[1] for p in pts], color=AMBER, lw=1.6, label="Operating line")
+    for (label, n, b, marker), colour in zip(points, POINT_COLOURS):
+        g, p = cmap.point(n, b)[:2]
+        ax.plot(g, p, marker, color=colour, ms=7, mec="white", label=label)
+    style(ax, title, "Corrected flow (relative to design)", "Pressure ratio")
+    legend(ax, loc="upper left")
+    return fig
+
+
+def turbine_map_figure(tmap, title, points=()):
+    """Flow capacity and efficiency against pressure ratio on each speed line of a calculated turbine map,
+    with operating points [(label, n, pr, marker)]."""
+    fig, (ax1, ax2) = figure(10, 4, 2)
+    prs = np.asarray(tmap.pr)
+    keep = prs <= max(1.6 * tmap.design_pr, 1.5)
+    cap_ref = tmap._eval(tmap._splines[0], 1.0, tmap.design_pr)
+    lowest = min([0.5] + [n - 0.1 for _, n, _, _ in points])
+    for j, n in enumerate(tmap.np_):
+        if n < lowest - 1e-9:
+            continue
+        shade = NAVY if abs(n - 1) < 1e-9 else BLUE
+        lw = 1.6 if abs(n - 1) < 1e-9 else 0.9
+        ax1.plot(prs[keep], np.asarray(tmap.wp[j])[keep] / cap_ref, color=shade, lw=lw)
+        ax2.plot(prs[keep], np.asarray(tmap.eff[j])[keep], color=shade, lw=lw)
+        if round(n * 100) % 10 == 0:
+            for ax, y in ((ax1, np.asarray(tmap.wp[j])[keep][-1] / cap_ref), (ax2, np.asarray(tmap.eff[j])[keep][-1])):
+                ax.annotate(f"{n:.0%}".replace("%", " %"), (prs[keep][-1], y), fontsize=6, color=NAVY,
+                            xytext=(3, 0), textcoords="offset points")
+    eff_ref = tmap._eval(tmap._splines[1], 1.0, tmap.design_pr)
+    for (label, n, pr, marker), colour in zip(points, POINT_COLOURS):
+        ax1.plot(pr, tmap.capacity(n, pr), marker, color=colour, ms=7, mec="white", label=label)
+        ax2.plot(pr, tmap.efficiency(n, pr) * eff_ref, marker, color=colour, ms=7, mec="white", label=label)
+    ax2.set_ylim(0, None)
+    style(ax1, f"{title}: flow capacity", "Pressure ratio", "Flow capacity (relative to design)")
+    style(ax2, f"{title}: efficiency", "Pressure ratio", "Isentropic efficiency")
+    if points:
+        legend(ax2, loc="lower right")
+    return fig
+
+
+def _stage_label(s):
+    return f"{s.stages} stages, loading {s.loading:g}, flow coefficient {s.flow_coefficient:g}"
 
 
 STATION_NAMES = {
@@ -881,6 +1077,104 @@ def fleet_section(model, n_engines=6, days=365, interval=3, dispatch="base", fau
 # --- turbofan --------------------------------------------------------------------------------------------
 
 
+def _lto_figures(lto, take_off_tet, ei1, bpr, fan_pr, hpc_pr):
+    modes = lto["modes"]
+    names = [m["mode"] for m in modes]
+    x = np.arange(len(modes))
+    fig1, (ax1, ax2) = figure(10, 4, 2)
+    ax1.bar(x, [m["ei_nox"] for m in modes], 0.6, color=NAVY)
+    for i, m in enumerate(modes):
+        ax1.annotate(f"{m['ei_nox']:.1f}", (i, m["ei_nox"]), ha="center", fontsize=7, xytext=(0, 2),
+                     textcoords="offset points")
+    ax1.set_xticks(x, names)
+    style(ax1, f"EI NOx by mode, take-off TET {take_off_tet:.0f} K\n"
+               f"index at severity 1: {ei1:g} g/kg, HPC PR {hpc_pr:g}", None, "EI NOx (g/kg fuel)")
+    ax2.bar(x, [m["nox_g"] / 1e3 for m in modes], 0.6, color=RED)
+    for i, m in enumerate(modes):
+        ax2.annotate(f"{m['nox_g'] / 1e3:.2f} kg\n({m['fuel_kg']:.0f} kg fuel)", (i, m["nox_g"] / 1e3), ha="center",
+                     fontsize=7, xytext=(0, 2), textcoords="offset points")
+    ax2.set_xticks(x, names)
+    ax2.set_ylim(0, 1.25 * max(m["nox_g"] for m in modes) / 1e3)
+    style(ax2, f"NOx mass over the LTO cycle\nDp/Foo {lto['dp_foo']:.1f} g/kN, rated thrust "
+               f"{lto['rated_thrust_kN']:.1f} kN", None, "NOx (kg)")
+    fig2, ax = figure(7.5, 4)
+    rpr = lto["rated_pressure_ratio"]
+    prs = np.linspace(10, max(60, rpr + 5), 100)
+    from ..aero_environment import nox_standard
+
+    ax.plot(prs, [nox_standard(p, 6) for p in prs], color=AMBER, lw=1.6, label="CAEP/6 (tier 6)")
+    ax.plot(prs, [nox_standard(p, 8) for p in prs], color=RED, lw=1.6, label="CAEP/8 (tier 8)")
+    ax.plot(rpr, lto["dp_foo"], "o", color=NAVY, ms=9, mec="white", label="This engine")
+    style(ax, f"LTO NOx against the standard\nrated PR {rpr:.1f}, Dp/Foo {lto['dp_foo']:.1f} g/kN "
+              f"({100 * lto['dp_foo'] / lto['tier8']:.0f} % of CAEP/8), BPR {bpr:g}, FPR {fan_pr:g}",
+          "Rated overall pressure ratio", "Dp/Foo (g/kN)")
+    legend(ax, loc="upper left")
+    return {"LTO NOx by mode": fig1, "LTO NOx against the standard": fig2}
+
+
+def _turbofan_maps(engine, mode_pts, sd):
+    markers = {"Take-off": "o", "Climb": "s", "Approach": "^", "Taxi/idle": "v"}
+    pts = [(name, r.info, markers.get(name, "o")) for name, r in mode_pts]
+    fan = compressor_map_figure(
+        engine.fan_map,
+        f"Fan map from stage stacking\nFPR {engine.cycle.fan_pr:g}, {int(sd['fan_stages'])} stage, "
+        f"loading {sd['fan_loading']:g}, flow coefficient {sd['fan_flow_coeff']:g}",
+        [("Cruise design", 1.0, engine.x_design["beta_fan"], "D")]
+        + [(n, i["n1_corrected"], i["x"]["beta_fan"], m) for n, i, m in pts])
+    hpc = compressor_map_figure(
+        engine.hpc_map,
+        f"HPC map from stage stacking\nPR {engine.cycle.hpc_pr:g}, {int(sd['hpc_stages'])} stages, "
+        f"loading {sd['hpc_loading']:g}, {int(sd['hpc_vane_rows'])} variable rows",
+        [("Cruise design", 1.0, engine.x_design["beta_hpc"], "D")]
+        + [(n, i["n2_corrected"], i["x"]["beta_hpc"], m) for n, i, m in pts])
+    hpt = turbine_map_figure(
+        engine.hpt_map, f"HPT ({int(sd['hpt_stages'])} stages, loading {sd['hpt_loading']:g})",
+        [("Cruise design", 1.0, engine.pr_hpt_design, "D")]
+        + [(n, i["hpt_corrected_speed"], i["hpt_pr"], m) for n, i, m in pts])
+    lpt = turbine_map_figure(
+        engine.lpt_map, f"LPT ({int(sd['lpt_stages'])} stages, loading {sd['lpt_loading']:g})",
+        [("Cruise design", 1.0, engine.pr_lpt_design, "D")]
+        + [(n, i["lpt_corrected_speed"], i["lpt_pr"], m) for n, i, m in pts])
+    return {"Fan map": fan, "HPC map": hpc, "HPT map": hpt, "LPT map": lpt}
+
+
+# Stage design of the turbofan's components, from which its five maps are calculated, and the combustor's
+# NOx index at severity 1 (32 g/kg: a conventional rich-burn combustor)
+TURBOFAN_STAGE_DEFAULTS = {
+    "fan_stages": 1, "fan_loading": 0.40, "fan_flow_coeff": 0.50,
+    "booster_stages": 3, "booster_loading": 0.35, "booster_flow_coeff": 0.50,
+    "hpc_stages": 10, "hpc_loading": 0.40, "hpc_flow_coeff": 0.50,
+    "hpc_vane_rows": 4, "hpc_vane_closed": -40.0, "hpc_vane_open_speed": 0.95, "hpc_vane_closed_speed": 0.65,
+    "hpt_stages": 2, "hpt_loading": 1.5, "hpt_flow_coeff": 0.60,
+    "lpt_stages": 5, "lpt_loading": 2.5, "lpt_flow_coeff": 0.80,
+    "ei_nox": 32.0,
+}
+
+
+def _stage_input_label(key):
+    if key == "ei_nox":
+        return "NOx index at severity 1 (g/kg)"
+    words = key.replace("flow_coeff", "flow coefficient").replace("vane_", "vanes ").split("_")
+    return " ".join(w.upper() if w in ("hpc", "hpt", "lpt") else w for w in words).capitalize().replace(
+        "Hpc", "HPC").replace("Hpt", "HPT").replace("Lpt", "LPT")
+
+
+def turbofan_stage_designs(sd):
+    from ..mapgen import CompressorStages, TurbineStages
+
+    def comp(k, **kw):
+        return CompressorStages(int(sd[f"{k}_stages"]), sd[f"{k}_loading"], sd[f"{k}_flow_coeff"], **kw)
+
+    return {
+        "fan": comp("fan", variable_rows=0),
+        "booster": comp("booster", variable_rows=0),
+        "hpc": comp("hpc", variable_rows=int(sd["hpc_vane_rows"]), vane_closed=sd["hpc_vane_closed"],
+                    vane_open_speed=sd["hpc_vane_open_speed"], vane_closed_speed=sd["hpc_vane_closed_speed"]),
+        "hpt": TurbineStages(int(sd["hpt_stages"]), sd["hpt_loading"], sd["hpt_flow_coeff"]),
+        "lpt": TurbineStages(int(sd["lpt_stages"]), sd["lpt_loading"], sd["lpt_flow_coeff"]),
+    }
+
+
 def turbofan_section(
     bpr=10.0,
     fan_pr=1.5,
@@ -893,6 +1187,7 @@ def turbofan_section(
     take_off_tet=1750.0,
     offdesign=True,
     environment=True,
+    stage_design=None,
 ):
     from ..aero import Flight, Turbofan
 
@@ -941,24 +1236,33 @@ def turbofan_section(
     if offdesign:
         from ..aero_offdesign import MatchError, TurbofanEngine
 
-        engine = TurbofanEngine(cycle, w, cruise)
+        sd = {**TURBOFAN_STAGE_DEFAULTS, **(stage_design or {})}
+        inputs.update({_stage_input_label(k): v for k, v in sd.items()})
+        engine = TurbofanEngine(cycle, w, cruise, stage_designs=turbofan_stage_designs(sd))
         sls = Flight()
         take_off = engine.run(sls, tet=take_off_tet)
         key.append(("Take-off thrust (sea level static)", f"{take_off.net_thrust / 1e3:.1f} kN"))
         alts = np.linspace(0.0, 12000.0, 9)
         lapse = []
         fig, ax = figure(7.5, 4)
+        start = take_off.info["x"]  # each curve starts from the last one's sea-level point
+        gaps = []
         for m_, c in zip([0.2, 0.4, 0.6, 0.8], ["#c3daf7", "#86b6ef", BLUE, NAVY]):
-            guess, th = None, []
+            guess, th = start, []
             for h in alts:
                 try:
-                    rr = engine.run(Flight(h, m_), tet=take_off_tet, guess=guess)
-                except MatchError:  # this TET cannot hold a match here: leave a gap in the curve
+                    if guess is None:
+                        raise MatchError("no match at a lower altitude")
+                    rr = engine.run(Flight(h, m_), tet=take_off_tet, guess=guess, walk=h == alts[0])
+                except MatchError:  # this TET cannot hold a match here (or higher): leave a gap in the curve
                     guess = None
+                    gaps.append((m_, h))
                     th.append(np.nan)
                     lapse.append({"Altitude (m)": h, "Mach": m_, "Net thrust (kN)": np.nan, "TSFC (mg/N/s)": np.nan})
                     continue
                 guess = rr.info["x"]
+                if h == alts[0]:
+                    start = guess
                 th.append(rr.net_thrust / 1e3)
                 lapse.append(
                     {
@@ -975,12 +1279,22 @@ def turbofan_section(
         legend(ax)
         figures["Thrust lapse"] = fig
         tables["Thrust lapse"] = pd.DataFrame(lapse)
+        if gaps:
+            first = {}
+            for m_, h in gaps:
+                first.setdefault(m_, h)
+            notes.append(
+                f"Thrust lapse at TET {take_off_tet:.0f} K stops where the engine has no match inside its calculated "
+                "maps (a spool's corrected speed runs past the top speed line): "
+                + ", ".join(f"Mach {m_} above {h / 1e3:g} km" for m_, h in first.items())
+                + ". A real engine would be held there by its spool speed limits."
+            )
         if environment:
-            from ..aero_environment import lto_cycle, noise_sources
+            from ..aero_environment import NOxSeverity, lto_cycle, noise_sources
 
             try:
-                lto = lto_cycle(engine, take_off_tet)
-            except MatchError as e:
+                lto = lto_cycle(engine, take_off_tet, NOxSeverity(sd["ei_nox"]))
+            except (MatchError, RuntimeError, ValueError) as e:
                 lto = None
                 notes.append(f"LTO NOx was not calculated: the engine has no match at these values ({e}).")
         if environment and lto is not None:
@@ -994,15 +1308,42 @@ def turbofan_section(
                     "ei_nox": "EI NOx (g/kg)",
                     "fuel_kg": "Fuel (kg)",
                     "nox_g": "NOx (g)",
+                    "n1": "N1 (relative)",
+                    "n2": "N2 (relative)",
+                    "tet_K": "TET (K)",
                 }
             )
             key += [
                 ("LTO NOx Dp/Foo", f"{lto['dp_foo']:.1f} g/kN (CAEP/8 limit {lto['tier8']:.1f})"),
+                ("Take-off EI NOx", f"{lto['modes'][0]['ei_nox']:.1f} g/kg"),
                 ("LTO fuel / CO2", f"{lto['fuel_kg']:.0f} kg / {lto['co2_kg']:.0f} kg"),
             ]
+            figures.update(_lto_figures(lto, take_off_tet, sd["ei_nox"], bpr, fan_pr, hpc_pr))
+            notes.append(
+                f"LTO NOx is calculated at each mode's own off-design point: the emissions index comes from the "
+                f"NOx severity parameter (P3, T3 and humidity) times {sd['ei_nox']:g} g/kg, the index at "
+                "severity 1 for your combustor technology (32 g/kg is a conventional rich-burn combustor)."
+            )
+            if lto["rated_thrust_kN"] <= 89:
+                notes.append(
+                    f"Rated thrust is {lto['rated_thrust_kN']:.1f} kN: the CAEP limits shown are the ones for "
+                    "engines above 89 kN; smaller engines have a thrust-dependent allowance on top."
+                )
+            mode_pts = [(m["mode"], r) for m, r in zip(lto["modes"], lto["results"])]
+            past = [m for m, r in mode_pts if r.info["surge_margin_fan"] < 0 or r.info["surge_margin_hpc"] < 0]
+            if past:
+                notes.append(
+                    f"At {', '.join(past).lower()} a compressor works past its calculated surge line (see the fan "
+                    "and HPC maps): with these stage values the design would need more surge margin there, for "
+                    "example a variable-area bypass nozzle or handling bleed."
+                )
+        else:
+            mode_pts = [("Take-off", take_off)]
+        figures.update(_turbofan_maps(engine, mode_pts, sd))
         if environment:
             try:
-                approach = engine.run(sls, thrust=0.3 * take_off.net_thrust)
+                approach = (lto["results"][2] if lto is not None
+                            else engine.run(sls, thrust=0.3 * take_off.net_thrust, guess=take_off.info["x"]))
             except MatchError as e:
                 approach = None
                 notes.append(f"Noise sources were not calculated: no approach match at these values ({e}).")
@@ -1027,8 +1368,5 @@ def turbofan_section(
                   None, "dB re 20 µPa at 1 m")
             legend(ax)
             figures["Noise sources"] = fig
-            notes.append(
-                "NOx emissions index at take-off is an illustrative 30 g/kg; noise is source levels, "
-                "not certification EPNdB."
-            )
+            notes.append("Noise is component source levels, not certification EPNdB.")
     return Section("turbofan", "Turbofan", inputs, key, tables, figures, notes)

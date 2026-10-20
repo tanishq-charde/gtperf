@@ -1,16 +1,20 @@
 """Aero engine environmental estimates: LTO-cycle NOx against the ICAO/EPA standard, and noise sources.
 
-**NOx.** Rich-burn and lean-burn aero combustors are correlated by the "P3-T3" form
+**NOx.** The emissions index comes from the NOx severity parameter used for aero combustors in GasTurb
+(Kurzke), which needs only combustor inlet pressure, temperature and humidity:
 
-    EI_NOx = EI_ref * (P3 / P3_ref)**n * exp((T3 - T3_ref) / T_scale)       [g NOx per kg fuel]
+    S_NOx = (P3 / 2965 kPa)**0.4 * exp((T3 - 826 K) / 194 K + (6.29 - 100 * WAR) / 53.2)
+    EI_NOx = EI_1 * S_NOx                                                   [g NOx per kg fuel]
 
-He, Chang and Follen (NASA Glenn, multipoint LDI flame-tube data) fit n of 0.46 to 0.60 and T_scale of
-132 to 200 K; n = 0.5 and T_scale = 180 K are used here. EI_ref is calibrated at take-off to the engine's
-measured value; the default is an illustrative 30 g/kg for a modern rich-burn combustor at this pressure
-ratio. The reference LTO cycle (take-off 0.7 min at 100 % rated thrust, climb 2.2 min at 85 %, approach
-4.0 min at 30 %, taxi and idle 26 min at 7 %) gives Dp/Foo, grams of NOx per kN of rated thrust, which is
-compared with the standard for the rated pressure ratio (US 40 CFR 1031.60, tier 6 in production and
-tier 8 for new types, the ICAO CAEP/6 and CAEP/8 levels, for rated thrust above 89 kN).
+EI_1, the index at severity 1, describes the combustor technology: 32 g/kg is a conventional rich-burn
+combustor; lean-burn designs are far lower. WAR is the water-to-air ratio (kg/kg); water vapour lowers NOx,
+and the ICAO reference humidity of 0.00634 kg/kg is used for the LTO cycle. Each LTO mode is run as its own
+off-design point (take-off 0.7 min at 100 % rated thrust, climb 2.2 min at 85 %, approach 4.0 min at 30 %,
+taxi and idle 26 min at 7 %), so T3 and P3, and with them the index, are the engine's own at each thrust.
+Dp/Foo, grams of NOx per kN of rated thrust, is compared with the standard for the rated pressure ratio (US
+40 CFR 1031.60, tier 6 in production and tier 8 for new types, the ICAO CAEP/6 and CAEP/8 levels, for rated
+thrust above 89 kN). `NOxCorrelation`, an index calibrated to one known point and scaled by P3 and T3, is
+kept for calibrating to measured data.
 
 **Noise.** Source levels for the two components that dominate a turbofan at take-off and approach:
 
@@ -64,28 +68,64 @@ class NOxCorrelation:
         return self.ei_ref * pressure * math.exp((s.t - self.t3_ref) / self.t_scale)
 
 
+@dataclass(frozen=True)
+class NOxSeverity:
+    """EI_NOx = ei_at_severity_1 * S_NOx (see the module notes)."""
+
+    ei_at_severity_1: float = 32.0
+    war: float = 0.00634  # water-to-air ratio, kg/kg (ICAO reference humidity)
+
+    def severity(self, p3, t3):
+        return (p3 / 2965e3) ** 0.4 * math.exp((t3 - 826.0) / 194.0 + (6.29 - 100 * self.war) / 53.2)
+
+    def ei(self, result):
+        s = result.stations["3"]
+        return self.ei_at_severity_1 * self.severity(s.p, s.t)
+
+
+def _run_at_thrust(engine, flight, thrust, start, steps=8):
+    """Operating point at a net thrust, falling back to stepping down in thrust from a converged point
+    `start` (a result) when the direct solve does not converge."""
+    from .aero_offdesign import MatchError
+
+    try:
+        return engine.run(flight, thrust=thrust, guess=start.info["x"])
+    except MatchError:
+        pass
+    r = start
+    for i in range(1, steps + 1):
+        r = engine.run(flight, thrust=start.net_thrust + (thrust - start.net_thrust) * i / steps, guess=r.info["x"])
+    return r
+
+
 def lto_cycle(engine, take_off_tet, correlation=None, flight=SEA_LEVEL_STATIC):
-    """LTO emissions of a TurbofanEngine rated at `take_off_tet`. Returns a dict with per-mode rows,
-    rated thrust (kN), rated pressure ratio, Dp/Foo and the tier 6 and tier 8 standards."""
+    """LTO emissions of a TurbofanEngine rated at `take_off_tet`, with the index from `correlation`
+    (default `NOxSeverity()`). Returns a dict with per-mode rows, rated thrust (kN), rated pressure ratio,
+    Dp/Foo and the tier 6 and tier 8 standards."""
     rated = engine.run(flight, tet=take_off_tet)
-    correlation = (correlation or NOxCorrelation()).calibrate(rated, (correlation or NOxCorrelation()).ei_ref)
+    if correlation is None:
+        correlation = NOxSeverity()
+    elif isinstance(correlation, NOxCorrelation):
+        correlation = correlation.calibrate(rated, correlation.ei_ref)
     foo = rated.net_thrust
     rpr = rated.stations["3"].p / rated.stations["2"].p
-    rows, guess, nox_total, fuel_total = [], None, 0.0, 0.0
+    rows, results, last, nox_total, fuel_total = [], [], rated, 0.0, 0.0
     for name, frac, minutes in LTO_MODES:
-        r = rated if frac == 1.0 else engine.run(flight, thrust=frac * foo, guess=guess)
-        guess = r.info["x"]
+        r = rated if frac == 1.0 else _run_at_thrust(engine, flight, frac * foo, last)
+        last = r
+        results.append(r)
         ei = correlation.ei(r)
         fuel = r.fuel_flow * minutes * 60
         rows.append({"mode": name, "thrust_kN": r.net_thrust / 1e3, "fuel_kg_s": r.fuel_flow,
                      "t3_K": r.stations["3"].t, "p3_bar": r.stations["3"].p / 1e5, "ei_nox": ei,
-                     "fuel_kg": fuel, "nox_g": ei * fuel})
+                     "fuel_kg": fuel, "nox_g": ei * fuel, "n1": r.info["n1"], "n2": r.info["n2"],
+                     "tet_K": r.info["tet"]})
         nox_total += ei * fuel
         fuel_total += fuel
     dp_foo = nox_total / (foo / 1e3)
     return {"modes": rows, "rated_thrust_kN": foo / 1e3, "rated_pressure_ratio": rpr, "dp_foo": dp_foo,
             "tier6": nox_standard(rpr, 6), "tier8": nox_standard(rpr, 8), "fuel_kg": fuel_total,
-            "co2_kg": CO2_PER_KG_FUEL * fuel_total}
+            "co2_kg": CO2_PER_KG_FUEL * fuel_total, "results": results}
 
 
 # --- noise ---------------------------------------------------------------------------------------
