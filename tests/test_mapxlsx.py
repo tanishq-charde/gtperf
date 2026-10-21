@@ -89,3 +89,16 @@ def test_turbofan_workbook_has_every_component():
     for name, c in checks.items():
         for n, w, pr, eta, *_ in c["points"]:
             assert (pr, eta) == pytest.approx(c["python"].point(n, w)[:2], rel=1e-8), (name, n, w)
+
+
+def test_operating_points_on_every_map(workbook):
+    data, _ = workbook
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    for name, n_points in (("Compressor", 3), ("HP turbine", 6), ("Power turbine", 6)):
+        ws = wb[name]
+        top = next(r for r in range(1, ws.max_row + 1)
+                   if str(ws.cell(r, 1).value).startswith("Engine operating points"))
+        labels = [ws.cell(r, 1).value for r in range(top + 3, top + 20) if ws.cell(r, 1).value]
+        assert len([x for x in labels if not x.startswith("Operating line")]) == n_points, (name, labels)
+        series = [s.tx.strRef.f if s.tx and s.tx.strRef else s.tx.v for c in ws._charts for s in c.series]
+        assert len(series) > 20

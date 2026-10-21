@@ -129,7 +129,7 @@ def map_xlsx(study, params_json, design_json):
             stages = {k: p[k] for k in core.TURBOFAN_STAGE_DEFAULTS if k in p}
             engine = core.turbofan_engine(p["bpr"], p["fpr"], p["fcpr"], p["hpc"], p["tet"], p["thr"], p["alt"],
                                           p["mach"], stages)
-            data = turbofan_map_workbook(engine, stages)
+            data = turbofan_map_workbook(engine, stages, take_off_tet=p["to_tet"])
         else:
             data = engine_map_workbook(model(json.loads(design_json)))
         return json.dumps({"ok": True, "b64": base64.b64encode(data).decode()})

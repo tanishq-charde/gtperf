@@ -414,10 +414,9 @@ def _turbine_point(engine, result):
     return (n_hpt, s41.p / s44.p), (n_pt, s45.p / pt_out.p)
 
 
-def _engine_maps(engine, d, iso, notes):
-    """Compressor, HP turbine and power turbine maps calculated from the design, with base-load points
-    from -20 to 45 °C and the ISO part-load line."""
-    cmap = engine.compressor_map
+def engine_operating_runs(engine):
+    """Base-load runs from -20 to 45 °C and ISO part-load runs from 90 to 30 %, the operating points the
+    Engine design maps show; points with no match are left out."""
     ambient_runs, load_runs = [], []
     for t in (-20, -10, 0, 15, 30, 45):
         try:
@@ -429,6 +428,19 @@ def _engine_maps(engine, d, iso, notes):
             load_runs.append((load, engine.run(ISO, load=load)))
         except RuntimeError:
             pass
+    return ambient_runs, load_runs
+
+
+def turbine_operating_point(engine, result):
+    """Public name for the corrected speeds and pressure ratios of the HP and power turbines at a run."""
+    return _turbine_point(engine, result)
+
+
+def _engine_maps(engine, d, iso, notes):
+    """Compressor, HP turbine and power turbine maps calculated from the design, with base-load points
+    from -20 to 45 °C and the ISO part-load line."""
+    cmap = engine.compressor_map
+    ambient_runs, load_runs = engine_operating_runs(engine)
     c = d
     title = (f"Compressor map from stage stacking\nPR {c['pressure_ratio']:g}, {int(c['comp_stages'])} stages, "
              f"loading {c['comp_loading']:g}, flow coefficient {c['comp_flow_coeff']:g}, "

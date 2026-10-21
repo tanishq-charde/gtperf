@@ -316,12 +316,30 @@ def _newton_columns(prefix, label, steps=NEWTON_STEPS):
 # --- inputs ------------------------------------------------------------------------------------------
 
 @dataclass(frozen=True)
+class OperatingPoint:
+    """An engine operating point on a map, as GTPerf's engine match finds it on its interpolated map:
+    corrected speed, flow (corrected flow of a compressor, flow capacity of a turbine), pressure ratio and
+    isentropic efficiency, with its chart marker."""
+
+    label: str
+    n: float
+    flow: float
+    pr: float
+    eff: float
+    marker: str = "circle"
+    colour: str = AMBER
+
+
+@dataclass(frozen=True)
 class CompressorDesign:
     title: str
     prefix: str  # name prefix in the workbook, one letter
     pressure_ratio: float
     polytropic_eff: float
     stages: CompressorStages
+    points: tuple = ()  # OperatingPoint, ...
+    line: tuple = ()  # OperatingPoint, ... along the operating line
+    design: tuple = ("Design point", "#555555")  # label and colour of the design-point marker
 
 
 @dataclass(frozen=True)
@@ -332,6 +350,8 @@ class TurbineDesign:
     efficiency: float
     t_in: float
     stages: TurbineStages
+    points: tuple = ()  # OperatingPoint, ...
+    design: tuple = ("Design point", "#555555")
 
 
 def _inputs(book, name, compressors, turbines, point):
@@ -515,6 +535,7 @@ def _compressor(book, comp: CompressorDesign):
     points = []  # (line index or None for the design point, R-line)
     for li in range(len(lines)):
         points += [(li, b) for b in R_LINES]
+    i_design = len(points)
     points.append((None, None))
     for i, (li, b) in enumerate(points):
         if li is None:
@@ -623,7 +644,7 @@ def _compressor(book, comp: CompressorDesign):
         mp.calc(i, "sm", f"c_DFlim/MAX(MAX({tb.span('df', k0, k1, sh)}),1E-6)-1")
         mp.calc(i, "smr", f"c_DFlim/MAX(MAX({tb.span('df', k0 + rear, k1, sh)}),1E-6)-1")
     end = mp.r(len(points)) + 1
-    design = mp.row(len(points) - 1)
+    design = mp.row(i_design)
     end = sh.quantities(end, "Map scaled to the engine design point", [
         ("Stacked pressure ratio at n = 1, w = 1", "c_PRraw", "π_d", design.pr, "",
          "the design-point row of the map points", "calc"),
@@ -650,7 +671,23 @@ def _compressor(book, comp: CompressorDesign):
         su.calc(li, "w", mp.sh.ref(mp.r(i), mp.index["w"], False))
         su.calc(li, "pr", mp.sh.ref(mp.r(i), mp.index["pr"], False))
 
-    _compressor_charts(book, sh, mp, su, lines, len(points) - 1, title)
+    end = su.r(len(lines)) + 1
+    ops = (*comp.points, *comp.line)
+    op = None
+    if ops:
+        sh.put(end, 0, "Engine operating points (from GTPerf's engine match on its interpolated map)", "h2")
+        op = _Table(sh, end + 1, 0, widths=False, columns=[
+            _Column("label", "Operating point", "", "fixed", 40),
+            _Column("n", "Relative corrected speed", "engine match", "search", 9),
+            _Column("w", "Corrected flow (relative)", "engine match", "search", 12),
+            _Column("pr", "Pressure ratio", "engine match", "search", 12),
+            _Column("eta", "Isentropic efficiency", "engine match", "search", 12),
+        ])
+        for k, o in enumerate(ops):
+            op.put(k, "label", o.label if k < len(comp.points) else f"Operating line: {o.label}")
+            for key, v in (("n", o.n), ("w", o.flow), ("pr", o.pr), ("eta", o.eff)):
+                op.put(k, key, v)
+    _compressor_charts(book, sh, mp, su, lines, comp, i_design, op)
     checks = [(mp.value(i, "n"), mp.value(i, "w"), mp.value(i, "pr"), mp.value(i, "eta"), mp.value(i, "sm"),
                mp.value(i, "smr")) for i in range(len(points))]
     return {"points": checks, "python": py, "map": cmap}
@@ -666,11 +703,21 @@ def _labels(count, text):
             "font": {"size": 7, "color": NAVY}}
 
 
-def _compressor_charts(book, sh, mp, su, lines, n_design, title):
-    wb, nb = book.wb, len(R_LINES)
+def _marker(op, size=8):
+    return {"type": op.marker, "size": size, "fill": {"color": op.colour}, "border": {"color": "white"}}
+
+
+def _axis_range(values, step, pad=0.0):
+    lo, hi = min(values), max(values)
+    return math.floor((lo - pad) / step) * step, math.ceil((hi + pad) / step) * step
+
+
+def _compressor_charts(book, sh, mp, su, lines, comp, i_design, op):
+    wb, nb, title = book.wb, len(R_LINES), comp.title
     c1 = wb.add_chart({"type": "scatter", "subtype": "straight"})
     c2 = wb.add_chart({"type": "scatter", "subtype": "straight"})
-    shown = [li for li, (n, *_) in enumerate(lines) if n >= CHART_LOWEST - 1e-9]
+    lowest = min([CHART_LOWEST] + [o.n - 0.05 for o in (*comp.points, *comp.line)])
+    shown = [li for li, (n, *_) in enumerate(lines) if n >= lowest - 1e-9]
     for li in shown:
         n, stalled = lines[li][0], lines[li][3]
         i0, i1 = li * nb, li * nb + nb - 1
@@ -686,24 +733,50 @@ def _compressor_charts(book, sh, mp, su, lines, n_design, title):
     c1.add_series({"name": "Surge line", "categories": su.chart_ref("w", first, len(lines) - 1),
                    "values": su.chart_ref("pr", first, len(lines) - 1), "line": {"color": RED, "width": 2.25},
                    "marker": {"type": "none"}})
+    n_pts, n_ops = len(comp.points), len(comp.points) + len(comp.line)
+    if comp.line:
+        for chart, key in ((c1, "pr"), (c2, "eta")):
+            chart.add_series({"name": "Operating line", "categories": op.chart_ref("w", n_pts, n_ops - 1),
+                              "values": op.chart_ref(key, n_pts, n_ops - 1),
+                              "line": {"color": AMBER, "width": 2.0}, "marker": {"type": "none"}})
+    design = OperatingPoint(comp.design[0], 1.0, 1.0, 0, 0, "diamond", comp.design[1])
     for chart, key in ((c1, "pr"), (c2, "eta")):
-        chart.add_series({"name": "Design point", "categories": mp.chart_ref("w", n_design, n_design),
-                          "values": mp.chart_ref(key, n_design, n_design), "line": {"none": True},
-                          "marker": {"type": "circle", "size": 7, "fill": {"color": AMBER},
-                                     "border": {"color": "white"}}})
+        chart.add_series({"name": design.label, "categories": mp.chart_ref("w", i_design, i_design),
+                          "values": mp.chart_ref(key, i_design, i_design), "line": {"none": True},
+                          "marker": _marker(design)})
+        for k, o in enumerate(comp.points):
+            chart.add_series({"name": o.label, "categories": op.chart_ref("w", k, k), "values": op.chart_ref(key, k, k),
+                              "line": {"none": True}, "marker": _marker(o)})
+    ev = book.ev.cells
+    col = lambda key, i0, i1: [ev[(mp.sh.name, mp.r(i), mp.index[key])] for i in range(i0, i1 + 1)]  # noqa: E731
+    ws_, prs, etas = [], [], []
+    for li in shown:
+        ws_ += col("w", li * nb, li * nb + nb - 1)
+        prs += col("pr", li * nb, li * nb + nb - 1)
+        etas += col("eta", li * nb, li * nb + nb - 1)
+    ws_ += [1.0] + [o.flow for o in (*comp.points, *comp.line)]
+    prs += [col("pr", i_design, i_design)[0]] + [o.pr for o in (*comp.points, *comp.line)]
+    xmin, xmax = _axis_range(ws_, 0.1, 0.02)
+    pr_step = 0.1 if max(prs) < 3 else 1.0 if max(prs) < 12 else 2.5
+    ymin, ymax = _axis_range(prs, pr_step)
+    ymin = max(1.0, ymin) if pr_step < 1 else ymin
+    emin = max(0.0, _axis_range([e for e in etas if e > 0.3], 0.05)[0])
     grid = {"visible": True, "line": {"color": "#E3E3E3"}}
-    for chart, name, y_axis in ((c1, f"{title} map", {"name": "Pressure ratio", "min": 1}),
-                                (c2, f"{title} efficiency", {"name": "Isentropic efficiency", "min": 0.5, "max": 1,
-                                                                "num_format": "0%"})):
+    pr_axis = {"name": "Pressure ratio", "min": ymin, "max": ymax, "major_unit": pr_step,
+               "num_format": "0.0" if pr_step != 1 else "0"}
+    for chart, name, y_axis in ((c1, f"{title} map", pr_axis),
+                                (c2, f"{title} efficiency", {"name": "Isentropic efficiency", "min": emin, "max": 1,
+                                                             "num_format": "0%"})):
         chart.set_title({"name": name, "name_font": {"size": 12, "bold": True, "color": NAVY}})
-        chart.set_x_axis({"name": "Corrected flow (relative to design)", "min": 0, "major_gridlines": grid,
-                          "num_font": {"size": 8}})
+        chart.set_x_axis({"name": "Corrected flow (relative to design)", "min": max(0.0, xmin), "max": xmax + 0.1,
+                          "major_unit": 0.1 if xmax - xmin <= 1 else 0.2, "num_format": "0.0",
+                          "major_gridlines": grid, "num_font": {"size": 8}})
         chart.set_y_axis({**y_axis, "major_gridlines": grid, "num_font": {"size": 8}})
         chart.set_legend({"position": "bottom", "delete_series": list(range(len(shown)))})
-        chart.set_size({"width": 760, "height": 500})
+        chart.set_size({"width": 760, "height": 520})
         chart.set_chartarea({"border": {"color": "#BBBBBB"}})
     sh.ws.insert_chart(3, 12, c1)
-    sh.ws.insert_chart(30, 12, c2)
+    sh.ws.insert_chart(31, 12, c2)
 
 
 # --- turbines ----------------------------------------------------------------------------------------
@@ -949,7 +1022,24 @@ def _turbine(book, t: TurbineDesign):
             mp.calc(i, "pr", f"{ch.pr}+(MAX({p}_PRmax,{ch.pr})-{ch.pr})*{m}/{CHOKE_EXTENSION}")
             mp.calc(i, "xc", f"(1-{x.pr}^(-{p}_k))/(1-{ch.pr}^(-{p}_k))-1")
             mp.calc(i, "eta", f"{ch.eta}*(1-g_cpost*{x.xc}^2)")
-    _turbine_charts(book, sh, mp, lines, blocks, t)
+    end = mp.r(len(pts)) + 1
+    design = OperatingPoint(t.design[0], 1.0, 1.0, t.pressure_ratio, t.efficiency, "diamond", t.design[1])
+    sh.put(end, 0, "Engine operating points (from GTPerf's engine match on its interpolated map)", "h2")
+    op = _Table(sh, end + 1, 0, widths=False, columns=[
+        _Column("label", "Operating point", "", "fixed", 40),
+        _Column("n", "Relative corrected speed", "engine match", "search", 9),
+        _Column("pr", "Expansion ratio", "engine match", "search", 12),
+        _Column("w", "Flow capacity (relative)", "GTPerf's map at this speed and expansion ratio", "search", 12),
+        _Column("eta", "Isentropic efficiency", "GTPerf's map at this speed and expansion ratio", "search", 12),
+    ])
+    ops = [design, *t.points]
+    for k, o in enumerate(ops):
+        op.put(k, "label", o.label)
+        op.put(k, "n", o.n)
+        op.put(k, "pr", o.pr)
+        op.put(k, "w", o.flow)
+        op.put(k, "eta", o.eff)
+    _turbine_charts(book, sh, mp, lines, blocks, t, op, ops)
     checks = [(mp.value(i, "n"), mp.value(i, "w"), mp.value(i, "pr"), mp.value(i, "eta")) for i in stage_rows]
     return {"points": checks, "python": py}
 
@@ -960,13 +1050,14 @@ def _turbine_lines(t: TurbineDesign):
     return turbine_map(t.pressure_ratio, t.efficiency, t.stages, t.t_in).info["choke"]
 
 
-def _turbine_charts(book, sh, mp, lines, blocks, t):
+def _turbine_charts(book, sh, mp, lines, blocks, t, op, ops):
     wb = book.wb
     c1 = wb.add_chart({"type": "scatter", "subtype": "straight"})
     c2 = wb.add_chart({"type": "scatter", "subtype": "straight"})
     shown = 0
+    lowest = min([CHART_LOWEST] + [o.n - 0.1 for o in ops])
     for (n, _, _), (b0, b1, _) in zip(lines, blocks):
-        if n < CHART_LOWEST - 1e-9:
+        if n < lowest - 1e-9:
             continue
         shown += 1
         design = abs(n - 1) < 1e-9
@@ -977,20 +1068,25 @@ def _turbine_charts(book, sh, mp, lines, blocks, t):
             if round(n * 100) % 10 == 0:
                 s["data_labels"] = _labels(b1 - b0 + 1, _speed_label(n))
             chart.add_series(s)
+    for k, o in enumerate(ops):
+        for chart, key in ((c1, "w"), (c2, "eta")):
+            chart.add_series({"name": o.label, "categories": op.chart_ref("pr", k, k),
+                              "values": op.chart_ref(key, k, k), "line": {"none": True}, "marker": _marker(o)})
     grid = {"visible": True, "line": {"color": "#E3E3E3"}}
-    xmax = max(1.6 * t.pressure_ratio, 1.5)
-    for chart, title, ytitle, extra in ((c1, "flow capacity", "Flow capacity (relative to design)", {"min": 0}),
+    xmax = max(1.6 * t.pressure_ratio, 1.5, *(o.pr + 0.1 for o in ops))
+    for chart, title, ytitle, extra in ((c1, "flow capacity", "Flow capacity (relative to design)",
+                                         {"min": 0, "num_format": "0.0"}),
                                         (c2, "efficiency", "Isentropic efficiency", {"min": 0, "max": 1,
                                                                                      "num_format": "0%"})):
         chart.set_title({"name": f"{t.title}: {title}", "name_font": {"size": 12, "bold": True, "color": NAVY}})
-        chart.set_x_axis({"name": "Expansion ratio (total to total)", "min": 1, "max": round(xmax + 0.05, 1),
-                          "major_gridlines": grid, "num_font": {"size": 8}})
+        chart.set_x_axis({"name": "Expansion ratio (total to total)", "min": 1, "max": math.ceil(xmax * 2) / 2,
+                          "num_format": "0.0", "major_gridlines": grid, "num_font": {"size": 8}})
         chart.set_y_axis({"name": ytitle, "major_gridlines": grid, "num_font": {"size": 8}, **extra})
-        chart.set_legend({"none": True})
-        chart.set_size({"width": 760, "height": 440})
+        chart.set_legend({"position": "bottom", "delete_series": list(range(shown))})
+        chart.set_size({"width": 760, "height": 480})
         chart.set_chartarea({"border": {"color": "#BBBBBB"}})
     sh.ws.insert_chart(3, 16, c1)
-    sh.ws.insert_chart(27, 16, c2)
+    sh.ws.insert_chart(29, 16, c2)
 
 
 # --- read me -----------------------------------------------------------------------------------------
@@ -1079,45 +1175,103 @@ def _release():
         return __version__
 
 
+MARKERS = {"o": "circle", "s": "square", "^": "triangle", "v": "x", "D": "diamond"}
+
+
+def _compressor_point(cmap, label, n, beta, marker="o", colour=AMBER):
+    """An operating point on a calculated compressor map at relative speed n and R-line beta, in the map's own
+    (unscaled) flow, pressure ratio and efficiency, as the sheets calculate them."""
+    w, pr, eff = (cmap._eval(s, n * cmap.design_nc, beta) for s in cmap._splines)
+    return OperatingPoint(label, n, w, pr, eff, MARKERS[marker], colour)
+
+
+def _turbine_point(tmap, label, n, pr, marker="o", colour=AMBER):
+    eff_ref = tmap._eval(tmap._splines[1], 1.0, tmap.design_pr)
+    return OperatingPoint(label, n, tmap.capacity(n, pr), pr, tmap.efficiency(n, pr) * eff_ref, MARKERS[marker],
+                          colour)
+
+
 def engine_map_workbook(model, checks=None):
-    """The map workbook of a design-mode engine (`gtperf.app.core.design_engine`)."""
-    from .app.core import compressor_stages
+    """The map workbook of a design-mode engine (`gtperf.app.core.design_engine`), with the operating points
+    the tool's Engine design maps show."""
+    from .app.core import POINT_COLOURS, compressor_stages, engine_operating_runs, turbine_operating_point
+    from .cycle import ISO
 
     d, engine = model.datasheet, model.engine
+    cmap = engine.compressor_map
+    iso = engine.run(ISO)
+    ambient_runs, load_runs = engine_operating_runs(engine)
+    base = [(t, r) for t, r in ambient_runs if t in (-20, 15, 45)]
+    c_points = tuple(_compressor_point(cmap, f"Base load {t} °C", r.info["corrected_speed"], r.info["beta"], "o", c)
+                     for (t, r), c in zip(base, POINT_COLOURS))
+    c_line = tuple(_compressor_point(cmap, f"{100 * f:.0f} % load", r.info["corrected_speed"], r.info["beta"])
+                   for f, r in load_runs[::-1]) + (
+        _compressor_point(cmap, "100 % load (ISO)", iso.info["corrected_speed"], iso.info["beta"]),)
+    runs = [("ISO base load", iso, "o")] + [(f"{t} °C", r, "s") for t, r in ambient_runs if t in (-20, 45)] + \
+        [(f"{100 * f:.0f} % load", r, "^") for f, r in load_runs if f in (0.6, 0.3)]
+    turbine_pts = {"hpt": [], "pt": []}
+    for (label, r, marker), colour in zip(runs, POINT_COLOURS):
+        (nh, ph), (np_, pp) = turbine_operating_point(engine, r)
+        turbine_pts["hpt"].append(_turbine_point(engine.hpt_map, label, nh, ph, marker, colour))
+        turbine_pts["pt"].append(_turbine_point(engine.pt_map, label, np_, pp, marker, colour))
     st = engine.design.stations
     turbines = []
     for key, title, prefix, s_in, s_out, eff in (("hpt", "HP turbine", "h", st["41"], st["44"], engine.hpt_eff_design),
                                                  ("pt", "Power turbine", "p", st["45"], st["5"], engine.pt_eff_design)):
         stages = TurbineStages(int(d[f"{key}_stages"]), d[f"{key}_loading"], d[f"{key}_flow_coeff"],
                                d[f"{key}_reaction"])
-        turbines.append(TurbineDesign(title, prefix, s_in.p / s_out.p, eff, s_in.t, stages))
+        turbines.append(TurbineDesign(title, prefix, s_in.p / s_out.p, eff, s_in.t, stages, tuple(turbine_pts[key])))
     compressor = CompressorDesign("Compressor", "c", d["pressure_ratio"], d["compressor_polytropic_eff"],
-                                  compressor_stages(d))
+                                  compressor_stages(d), c_points, c_line)
     return map_workbook(d.get("name") or "Engine", [compressor], turbines, _release(), checks)
 
 
-def turbofan_map_workbook(engine, stage_design=None, checks=None):
+def turbofan_map_workbook(engine, stage_design=None, checks=None, take_off_tet=1750.0):
     """The map workbook of the Turbofan study's engine (`gtperf.app.core.turbofan_engine`): fan, booster,
-    HPC, HPT and LPT, as the engine builds them at its cruise design point."""
-    from .aero_offdesign import _turbine_eff
-    from .app.core import TURBOFAN_STAGE_DEFAULTS, turbofan_stage_designs
+    HPC, HPT and LPT, as the engine builds them at its cruise design point, with the LTO mode points at
+    take-off TET `take_off_tet` (left out when the engine has no match there)."""
+    from .aero_environment import lto_cycle
+    from .aero_offdesign import MatchError, _turbine_eff
+    from .app.core import POINT_COLOURS, TURBOFAN_STAGE_DEFAULTS, turbofan_stage_designs
     from .mapgen import polytropic_from_isentropic
 
     cy, st = engine.cycle, engine.design.stations
     sd = turbofan_stage_designs({**TURBOFAN_STAGE_DEFAULTS, **(stage_design or {})})
+    try:
+        lto = lto_cycle(engine, take_off_tet)
+        modes = list(zip((m["mode"] for m in lto["modes"]), lto["results"]))
+    except (MatchError, RuntimeError, ValueError):
+        modes = []
+    markers = {"Take-off": "o", "Climb": "s", "Approach": "^", "Taxi/idle": "v"}
+    colours = POINT_COLOURS[1:]  # the cruise design point takes the first colour, as in the tool
+
+    def comp_points(cmap, speed, beta):
+        return tuple(_compressor_point(cmap, name, r.info[speed], r.info["x"][beta], markers.get(name, "o"), c)
+                     for (name, r), c in zip(modes, colours))
+
+    def turb_points(tmap, speed, pr):
+        return tuple(_turbine_point(tmap, name, r.info[speed], r.info[pr], markers.get(name, "o"), c)
+                     for (name, r), c in zip(modes, colours))
 
     def poly(e, pr):
         return e if cy.compressor_polytropic else polytropic_from_isentropic(pr, e)
 
+    design = ("Cruise design", POINT_COLOURS[0])
     core_pr = cy.fan_core_pr or cy.fan_pr
-    compressors = [CompressorDesign("Fan", "f", cy.fan_pr, poly(cy.fan_eff, cy.fan_pr), sd["fan"])]
+    compressors = [CompressorDesign("Fan", "f", cy.fan_pr, poly(cy.fan_eff, cy.fan_pr), sd["fan"],
+                                    comp_points(engine.fan_map, "n1_corrected", "beta_fan"), design=design)]
     if engine.has_booster:
         b_pr = core_pr / cy.fan_pr
-        compressors.append(CompressorDesign("Booster", "b", b_pr, poly(cy.booster_eff, b_pr), sd["booster"]))
-    compressors.append(CompressorDesign("HPC", "c", cy.hpc_pr, poly(cy.hpc_eff, cy.hpc_pr), sd["hpc"]))
+        compressors.append(CompressorDesign("Booster", "b", b_pr, poly(cy.booster_eff, b_pr), sd["booster"],
+                                            comp_points(engine.booster_map, "booster_corrected_speed",
+                                                        "beta_booster"), design=design))
+    compressors.append(CompressorDesign("HPC", "c", cy.hpc_pr, poly(cy.hpc_eff, cy.hpc_pr), sd["hpc"],
+                                        comp_points(engine.hpc_map, "n2_corrected", "beta_hpc"), design=design))
     turbines = [
-        TurbineDesign("HPT", "h", engine.pr_hpt_design, _turbine_eff(st["41"], st["44"]), st["41"].t, sd["hpt"]),
-        TurbineDesign("LPT", "l", engine.pr_lpt_design, _turbine_eff(st["49"], st["5"]), st["49"].t, sd["lpt"]),
+        TurbineDesign("HPT", "h", engine.pr_hpt_design, _turbine_eff(st["41"], st["44"]), st["41"].t, sd["hpt"],
+                      turb_points(engine.hpt_map, "hpt_corrected_speed", "hpt_pr"), design),
+        TurbineDesign("LPT", "l", engine.pr_lpt_design, _turbine_eff(st["49"], st["5"]), st["49"].t, sd["lpt"],
+                      turb_points(engine.lpt_map, "lpt_corrected_speed", "lpt_pr"), design),
     ]
     flight = engine.design_flight
     name = f"Turbofan, BPR {cy.bpr:g}, FPR {cy.fan_pr:g}, HPC PR {cy.hpc_pr:g}"
@@ -1125,4 +1279,5 @@ def turbofan_map_workbook(engine, stage_design=None, checks=None):
                         point=f"cruise ({flight.altitude_m:g} m, Mach {flight.mach:g})")
 
 
-__all__ = ["CompressorDesign", "TurbineDesign", "map_workbook", "engine_map_workbook", "turbofan_map_workbook"]
+__all__ = ["OperatingPoint", "CompressorDesign", "TurbineDesign", "map_workbook", "engine_map_workbook",
+           "turbofan_map_workbook"]
