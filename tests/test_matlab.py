@@ -19,7 +19,12 @@ def test_matlab_inputs_are_current():
     """The species table and reference values in matlab/ match what the Python package produces now."""
     ref = _make_reference()
     assert (MATLAB / "gt_species_data.m").read_text() == ref.species_m()
-    assert (MATLAB / "reference_values.csv").read_text() == ref.reference_csv()
+    # values are compared numerically: the last float digits differ between NumPy/Python builds
+    saved = dict(line.split(",") for line in (MATLAB / "reference_values.csv").read_text().splitlines()[1:])
+    now = dict(line.split(",") for line in ref.reference_csv().splitlines()[1:])
+    assert saved.keys() == now.keys()
+    for name, value in saved.items():
+        assert float(value) == pytest.approx(float(now[name]), rel=1e-12), name
 
 
 @pytest.mark.skipif(not shutil.which("octave"), reason="GNU Octave not installed")

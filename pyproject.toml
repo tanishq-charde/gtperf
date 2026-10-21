@@ -12,9 +12,9 @@ dependencies = ["numpy", "scipy", "pandas"]
 
 [project.optional-dependencies]
 plots = ["matplotlib"]  # also needed for pass-off report figures
-excel = ["openpyxl"]
+excel = ["openpyxl", "xlsxwriter"]
 gui = ["matplotlib"]  # the web tool's calculation layer (gtperf.app.core)
-dev = ["pytest", "pytest-cov", "ruff", "matplotlib", "openpyxl", "cantera"]
+dev = ["pytest", "pytest-cov", "ruff", "matplotlib", "openpyxl", "xlsxwriter", "cantera"]
 
 [project.scripts]
 gtperf = "gtperf.cli:main"

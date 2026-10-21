@@ -1,6 +1,7 @@
 """Runs one GTPerf study from the design page's inputs and returns it as JSON (key results, notes, tables,
 charts as SVG). The same file runs natively (to bake the starting results into the page) and in Pyodide."""
 
+import base64
 import io
 import json
 import math
@@ -115,6 +116,24 @@ def run(study, params_json, design_json):
         s = section(study, json.loads(params_json), json.loads(design_json))
         return json.dumps({"ok": True, "section": pack(s)})
     except Exception as e:  # shown on the page: a design far from sensible may not converge
+        return json.dumps({"ok": False, "error": explain(e)})
+
+
+def map_xlsx(study, params_json, design_json):
+    """A study's calculated maps as an Excel workbook of live formulas (base64), for the download."""
+    try:
+        from gtperf.mapxlsx import engine_map_workbook, turbofan_map_workbook
+
+        if study == "turbofan":
+            p = json.loads(params_json)
+            stages = {k: p[k] for k in core.TURBOFAN_STAGE_DEFAULTS if k in p}
+            engine = core.turbofan_engine(p["bpr"], p["fpr"], p["fcpr"], p["hpc"], p["tet"], p["thr"], p["alt"],
+                                          p["mach"], stages)
+            data = turbofan_map_workbook(engine, stages, take_off_tet=p["to_tet"])
+        else:
+            data = engine_map_workbook(model(json.loads(design_json)))
+        return json.dumps({"ok": True, "b64": base64.b64encode(data).decode()})
+    except Exception as e:
         return json.dumps({"ok": False, "error": explain(e)})
 
 
