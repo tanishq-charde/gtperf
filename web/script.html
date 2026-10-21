@@ -2,6 +2,7 @@
 const SPEC = __SPEC__;
 const BAKED = __BAKED__;
 const WHEEL_B64 = "__WHEEL__";
+const XLSXWRITER_B64 = "__XLSXWRITER__";
 const COMPUTE_PY = __COMPUTE__;
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.3/full/";
 
@@ -11,7 +12,7 @@ const PAGES = [
   "name": "Overview",
   "title": "Gas turbine design and performance tool",
   "lede": "A design and research tool for industrial gas turbines and turbofans. Set the cycle and blade-stage choices; the tool builds the engine, calculates its own compressor and turbine maps and shows how each choice carries through to site rating, part load, emissions, acceptance testing and service. Use it to explore a design, compare options and understand the trade-offs behind them.",
-  "about": "<h4>Purpose</h4><p>GTPerf is built for design exploration. Every result is calculated from the inputs, so the effect of one choice, such as a higher turbine inlet temperature, more highly loaded compressor stages or a different vane schedule, can be followed through the whole engine. Inputs have no range limits; values that cannot describe a working engine get a plain explanation.</p><h4>How to use it</h4><p>Start on Engine design: change a design value and calculate. Every other gas turbine study then uses that engine; a study run on an earlier design is marked ⚠ until it is recalculated. Run every study calculates all six in sequence. To compare options, change one input at a time and download each result as SVG or CSV.</p><h4>Starting point</h4><p>The inputs start at values that reproduce the published Siemens SGT-400 13 MW rating (12.9 MW, 10,294 kJ/kWh at ISO), so the baseline can be checked against a real engine before it is changed.</p><h4>Studies</h4><p><b>Engine design:</b> cycle, ISO rating and calculated compressor and turbine maps. <b>Site performance:</b> rating at site conditions and correction curves. <b>Part load and emissions:</b> turn-down with DLE NOx and CO. <b>Pass-off test:</b> acceptance test analysis with measurement uncertainty. <b>Fleet monitoring:</b> fault detection and isolation from service data. <b>Turbofan:</b> a separate two-spool aero engine with thrust lapse, LTO NOx and noise.</p><h4>Open and extensible</h4><p>The tool runs the open-source gtperf Python package in the browser. The same models can be scripted, extended or replaced in Python; the code and documentation are on <a href=\"https://github.com/tanishq-charde/gtperf\" target=\"_blank\" rel=\"noopener\">GitHub</a>.</p>"
+  "about": "<h4>Purpose</h4><p>GTPerf is built for design exploration. Every result is calculated from the inputs, so the effect of one choice, such as a higher turbine inlet temperature, more highly loaded compressor stages or a different vane schedule, can be followed through the whole engine. Inputs have no range limits; values that cannot describe a working engine get a plain explanation.</p><h4>How to use it</h4><p>Start on Engine design: change a design value and calculate. Every other gas turbine study then uses that engine; a study run on an earlier design is marked ⚠ until it is recalculated. Run every study calculates all six in sequence. To compare options, change one input at a time and download each result as SVG or CSV. On Engine design, the map spreadsheet (XLSX) rebuilds the compressor and turbine maps in Excel as live formulas with native charts.</p><h4>Starting point</h4><p>The inputs start at values that reproduce the published Siemens SGT-400 13 MW rating (12.9 MW, 10,294 kJ/kWh at ISO), so the baseline can be checked against a real engine before it is changed.</p><h4>Studies</h4><p><b>Engine design:</b> cycle, ISO rating and calculated compressor and turbine maps. <b>Site performance:</b> rating at site conditions and correction curves. <b>Part load and emissions:</b> turn-down with DLE NOx and CO. <b>Pass-off test:</b> acceptance test analysis with measurement uncertainty. <b>Fleet monitoring:</b> fault detection and isolation from service data. <b>Turbofan:</b> a separate two-spool aero engine with thrust lapse, LTO NOx and noise.</p><h4>Open and extensible</h4><p>The tool runs the open-source gtperf Python package in the browser. The same models can be scripted, extended or replaced in Python; the code and documentation are on <a href=\"https://github.com/tanishq-charde/gtperf\" target=\"_blank\" rel=\"noopener\">GitHub</a>.</p>"
  },
  {
   "id": "engine",
@@ -139,7 +140,8 @@ async function loadPy(){
   const py = await loadPyodide({indexURL: PYODIDE});
   await py.loadPackage(["numpy", "scipy", "pandas", "matplotlib"]);
   py.FS.writeFile("/tmp/gtperf.whl", Uint8Array.from(atob(WHEEL_B64), c => c.charCodeAt(0)));
-  py.runPython("import site, zipfile\nzipfile.ZipFile('/tmp/gtperf.whl').extractall(site.getsitepackages()[0])");
+  py.FS.writeFile("/tmp/xlsxwriter.whl", Uint8Array.from(atob(XLSXWRITER_B64), c => c.charCodeAt(0)));
+  py.runPython("import site, zipfile\nfor w in ('gtperf', 'xlsxwriter'):\n    zipfile.ZipFile(f'/tmp/{w}.whl').extractall(site.getsitepackages()[0])");
   py.runPython(COMPUTE_PY);
   setCalc("Calculator ready", "ready");
   return py;
@@ -225,15 +227,34 @@ function tables(study){
 function charts(study){
   const s = results[study].section, names = Object.keys(s.figures), box = $("#figs"); if (!box || !names.length) return;
   const draw = () => { const v = $("#csel").value; const show = v === "All charts" ? names : [v];
-    $("#cout").innerHTML = show.map(n=>`<figure>${s.figures[n]}<figcaption><span>${esc(n)}</span><button class="btn small" data-svg="${esc(n)}">Download SVG</button></figcaption>${CAPTIONS[n] ? `<p class="figtext">${CAPTIONS[n]}</p>` : ""}</figure>`).join(""); };
+    $("#cout").innerHTML = show.map(n=>`<figure>${s.figures[n]}<figcaption><span>${esc(n)}</span><span style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn small" data-svg="${esc(n)}">Download SVG</button>${study === "engine" && MAP_FIGS.includes(n) ? mapXlsxButton("small") : ""}</span></figcaption>${CAPTIONS[n] ? `<p class="figtext">${CAPTIONS[n]}</p>` : ""}</figure>`).join(""); };
   box.innerHTML = `<div class="bar"><h3>Charts</h3><select id="csel"><option>All charts</option>${names.map(n=>`<option>${esc(n)}</option>`).join("")}</select></div><div id="cout"></div>`;
   $("#csel").onchange = draw; $("#cout").onclick = e => { const b = e.target.closest("[data-svg]"); if (b) saveSvg(study, b.dataset.svg); };
   draw();
 }
+const MAP_FIGS = ["Compressor map", "HP turbine map", "Power turbine map"];
+async function saveMapXlsx(btn){
+  const des = JSON.parse(results.engine ? results.engine.design : JSON.stringify(engineDesign));
+  const buttons = [...document.querySelectorAll("[data-mapxlsx]")], label = btn.textContent;
+  buttons.forEach(b => { b.disabled = true; }); btn.textContent = "Building the spreadsheet…";
+  toast($("#calcstate").classList.contains("ready") ? "Building the map spreadsheet (about 20 seconds)" : "Loading the calculator, then building the map spreadsheet");
+  try {
+    const py = await pyReady;
+    await new Promise(r => setTimeout(r, 60));   // let the button text paint before Python takes the thread
+    const r = JSON.parse(py.globals.get("map_xlsx")(JSON.stringify(des)));
+    if (!r.ok) throw new Error(r.error);
+    save(`${slug(des.name || "engine")}_maps.xlsx`, Uint8Array.from(atob(r.b64), c => c.charCodeAt(0)), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    toast("Map spreadsheet downloaded");
+  } catch (e) { toast("The spreadsheet could not be built: " + e.message); }
+  buttons.forEach(b => { b.disabled = false; }); btn.textContent = label;
+}
+const mapXlsxButton = (cls) => `<button class="btn ${cls}" data-mapxlsx onclick="saveMapXlsx(this)">Map spreadsheet (XLSX)</button>`;
 function studyDownloads(study){
   const s = results[study].section;
   return `<div class="downloads"><button class="btn" onclick="Object.keys(results['${study}'].section.figures).forEach(n=>saveSvg('${study}',n))">All charts (SVG)</button>
-    <button class="btn" onclick="Object.keys(results['${study}'].section.tables).forEach(n=>saveCsv('${study}',n))">All tables (CSV)</button></div>`;
+    <button class="btn" onclick="Object.keys(results['${study}'].section.tables).forEach(n=>saveCsv('${study}',n))">All tables (CSV)</button>
+    ${study === "engine" && MAP_FIGS.some(n => s.figures[n]) ? mapXlsxButton("") : ""}</div>
+    ${study === "engine" && MAP_FIGS.some(n => s.figures[n]) ? `<p class="figtext">The map spreadsheet works the compressor and turbine maps out in Excel: your inputs in a table, every stage of every map point as a live formula, and native Excel charts drawn from those cells.</p>` : ""}`;
 }
 function results_(p){
   const sp = SPEC[p.id];
@@ -260,7 +281,7 @@ const FLOW = `<svg class="flow" viewBox="0 0 760 330" role="img" aria-label="The
   <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#12224A" stroke="none"/></marker></defs>
   ${[["Your inputs",10,140],["Engine design",170,140]].map(([t,x,y])=>`<rect x="${x}" y="${y}" width="130" height="46"/><text x="${x+65}" y="${y+28}">${t}</text>`).join("")}
   ${[["Site performance",30],["Part load & emissions",90],["Pass-off test",150],["Fleet monitoring",210],["Turbofan",270]].map(([t,y])=>`<rect x="370" y="${y}" width="170" height="40"/><text x="455" y="${y+25}">${t}</text>`).join("")}
-  <rect class="dark" x="610" y="140" width="140" height="46"/><text class="light" x="680" y="161">Downloads</text><text class="light" x="680" y="178" style="font-size:11px;font-family:var(--sans)">SVG · CSV</text>
+  <rect class="dark" x="610" y="140" width="140" height="46"/><text class="light" x="680" y="161">Downloads</text><text class="light" x="680" y="178" style="font-size:11px;font-family:var(--sans)">SVG · CSV · XLSX</text>
   <path d="M140 163H168"/>${[50,110,170,230].map(y=>`<path d="M300 163C335 163 335 ${y} 368 ${y}"/>`).join("")}
   ${[50,110,170,230,290].map(y=>`<path d="M540 ${y}C575 ${y} 575 163 608 163"/>`).join("")}
 </svg>`;

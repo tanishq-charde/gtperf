@@ -1,6 +1,7 @@
 """Runs one GTPerf study from the design page's inputs and returns it as JSON (key results, notes, tables,
 charts as SVG). The same file runs natively (to bake the starting results into the page) and in Pyodide."""
 
+import base64
 import io
 import json
 import math
@@ -115,6 +116,17 @@ def run(study, params_json, design_json):
         s = section(study, json.loads(params_json), json.loads(design_json))
         return json.dumps({"ok": True, "section": pack(s)})
     except Exception as e:  # shown on the page: a design far from sensible may not converge
+        return json.dumps({"ok": False, "error": explain(e)})
+
+
+def map_xlsx(design_json):
+    """The engine's calculated maps as an Excel workbook of live formulas (base64), for the download."""
+    try:
+        from gtperf.mapxlsx import engine_map_workbook
+
+        data = engine_map_workbook(model(json.loads(design_json)))
+        return json.dumps({"ok": True, "b64": base64.b64encode(data).decode()})
+    except Exception as e:
         return json.dumps({"ok": False, "error": explain(e)})
 
 

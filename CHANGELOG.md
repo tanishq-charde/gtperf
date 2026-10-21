@@ -2,6 +2,10 @@
 
 GTPerf was built in phases; each section records what that phase or release added.
 
+## Unreleased
+
+- **Map spreadsheet (XLSX).** On Engine design, the compressor, HP turbine and power turbine maps download as an Excel workbook that works them out itself: the design inputs in a table, the design-point velocity triangles and stage sizing, every stage of every map point as a live formula (axial velocities by Newton iterations in helper columns), and native Excel charts drawn from those cells. Change an input and the maps recalculate. The formulas reproduce `gtperf.mapgen` to 1 part in 10¹⁰ and are checked in LibreOffice (`gtperf.mapxlsx`, tests/test_mapxlsx.py).
+
 ## Phase 1
 
 - **Real-gas properties.** Humid air and combustion products as ideal-gas mixtures, using NASA 7-coefficient polynomials (GRI-Mech 3.0 data). Enthalpies include heats of formation, so fuel LHV and the combustor energy balance come out of the same property model. Checked against Cantera to 1 part in a million.
