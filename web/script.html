@@ -12,7 +12,7 @@ const PAGES = [
   "name": "Overview",
   "title": "Gas turbine design and performance tool",
   "lede": "A design and research tool for industrial gas turbines and turbofans. Set the cycle and blade-stage choices; the tool builds the engine, calculates its own compressor and turbine maps and shows how each choice carries through to site rating, part load, emissions, acceptance testing and service. Use it to explore a design, compare options and understand the trade-offs behind them.",
-  "about": "<h4>Purpose</h4><p>GTPerf is built for design exploration. Every result is calculated from the inputs, so the effect of one choice, such as a higher turbine inlet temperature, more highly loaded compressor stages or a different vane schedule, can be followed through the whole engine. Inputs have no range limits; values that cannot describe a working engine get a plain explanation.</p><h4>How to use it</h4><p>Start on Engine design: change a design value and calculate. Every other gas turbine study then uses that engine; a study run on an earlier design is marked ⚠ until it is recalculated. Run every study calculates all six in sequence. To compare options, change one input at a time and download each result as SVG or CSV. On Engine design, the map spreadsheet (XLSX) rebuilds the compressor and turbine maps in Excel as live formulas with native charts.</p><h4>Starting point</h4><p>The inputs start at values that reproduce the published Siemens SGT-400 13 MW rating (12.9 MW, 10,294 kJ/kWh at ISO), so the baseline can be checked against a real engine before it is changed.</p><h4>Studies</h4><p><b>Engine design:</b> cycle, ISO rating and calculated compressor and turbine maps. <b>Site performance:</b> rating at site conditions and correction curves. <b>Part load and emissions:</b> turn-down with DLE NOx and CO. <b>Pass-off test:</b> acceptance test analysis with measurement uncertainty. <b>Fleet monitoring:</b> fault detection and isolation from service data. <b>Turbofan:</b> a separate two-spool aero engine with thrust lapse, LTO NOx and noise.</p><h4>Open and extensible</h4><p>The tool runs the open-source gtperf Python package in the browser. The same models can be scripted, extended or replaced in Python; the code and documentation are on <a href=\"https://github.com/tanishq-charde/gtperf\" target=\"_blank\" rel=\"noopener\">GitHub</a>.</p>"
+  "about": "<h4>Purpose</h4><p>GTPerf is built for design exploration. Every result is calculated from the inputs, so the effect of one choice, such as a higher turbine inlet temperature, more highly loaded compressor stages or a different vane schedule, can be followed through the whole engine. Inputs have no range limits; values that cannot describe a working engine get a plain explanation.</p><h4>How to use it</h4><p>Start on Engine design: change a design value and calculate. Every other gas turbine study then uses that engine; a study run on an earlier design is marked ⚠ until it is recalculated. Run every study calculates all six in sequence. To compare options, change one input at a time and download each result as SVG or CSV. On Engine design and Turbofan, the map spreadsheet (XLSX) rebuilds the compressor and turbine maps in Excel as live formulas with native charts.</p><h4>Starting point</h4><p>The inputs start at values that reproduce the published Siemens SGT-400 13 MW rating (12.9 MW, 10,294 kJ/kWh at ISO), so the baseline can be checked against a real engine before it is changed.</p><h4>Studies</h4><p><b>Engine design:</b> cycle, ISO rating and calculated compressor and turbine maps. <b>Site performance:</b> rating at site conditions and correction curves. <b>Part load and emissions:</b> turn-down with DLE NOx and CO. <b>Pass-off test:</b> acceptance test analysis with measurement uncertainty. <b>Fleet monitoring:</b> fault detection and isolation from service data. <b>Turbofan:</b> a separate two-spool aero engine with thrust lapse, LTO NOx and noise.</p><h4>Open and extensible</h4><p>The tool runs the open-source gtperf Python package in the browser. The same models can be scripted, extended or replaced in Python; the code and documentation are on <a href=\"https://github.com/tanishq-charde/gtperf\" target=\"_blank\" rel=\"noopener\">GitHub</a>.</p>"
  },
  {
   "id": "engine",
@@ -162,7 +162,7 @@ async function calc(study){
   busy[study] = true; delete errors[study]; render();
   try {
     const r = await compute(study);
-    if (r.ok) results[study] = {section: r.section, design: JSON.stringify(engineDesign)};
+    if (r.ok) results[study] = {section: r.section, design: JSON.stringify(engineDesign), params: JSON.stringify(state[study])};
     else errors[study] = r.error;
   } catch (e) { errors[study] = e.message; }
   busy[study] = false; render();
@@ -172,7 +172,7 @@ async function runAll(){
   for (const s of STUDIES){
     window._runall = STUDIES.indexOf(s) + 1; render();
     busy[s] = true; delete errors[s];
-    try { const r = await compute(s); if (r.ok) results[s] = {section: r.section, design: JSON.stringify(engineDesign)}; else errors[s] = r.error; }
+    try { const r = await compute(s); if (r.ok) results[s] = {section: r.section, design: JSON.stringify(engineDesign), params: JSON.stringify(state[s])}; else errors[s] = r.error; }
     catch (e) { errors[s] = e.message; }
     busy[s] = false;
   }
@@ -227,34 +227,36 @@ function tables(study){
 function charts(study){
   const s = results[study].section, names = Object.keys(s.figures), box = $("#figs"); if (!box || !names.length) return;
   const draw = () => { const v = $("#csel").value; const show = v === "All charts" ? names : [v];
-    $("#cout").innerHTML = show.map(n=>`<figure>${s.figures[n]}<figcaption><span>${esc(n)}</span><span style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn small" data-svg="${esc(n)}">Download SVG</button>${study === "engine" && MAP_FIGS.includes(n) ? mapXlsxButton("small") : ""}</span></figcaption>${CAPTIONS[n] ? `<p class="figtext">${CAPTIONS[n]}</p>` : ""}</figure>`).join(""); };
+    $("#cout").innerHTML = show.map(n=>`<figure>${s.figures[n]}<figcaption><span>${esc(n)}</span><span style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn small" data-svg="${esc(n)}">Download SVG</button>${hasMaps(study) && MAP_FIGS.includes(n) ? mapXlsxButton(study, "small") : ""}</span></figcaption>${CAPTIONS[n] ? `<p class="figtext">${CAPTIONS[n]}</p>` : ""}</figure>`).join(""); };
   box.innerHTML = `<div class="bar"><h3>Charts</h3><select id="csel"><option>All charts</option>${names.map(n=>`<option>${esc(n)}</option>`).join("")}</select></div><div id="cout"></div>`;
   $("#csel").onchange = draw; $("#cout").onclick = e => { const b = e.target.closest("[data-svg]"); if (b) saveSvg(study, b.dataset.svg); };
   draw();
 }
-const MAP_FIGS = ["Compressor map", "HP turbine map", "Power turbine map"];
-async function saveMapXlsx(btn){
-  const des = JSON.parse(results.engine ? results.engine.design : JSON.stringify(engineDesign));
+const MAP_FIGS = ["Compressor map", "HP turbine map", "Power turbine map", "Fan map", "HPC map", "HPT map", "LPT map"];
+const hasMaps = study => (study === "engine" || study === "turbofan") && results[study] && MAP_FIGS.some(n => results[study].section.figures[n]);
+async function saveMapXlsx(btn, study){
+  const res = results[study], des = res.design, params = res.params || JSON.stringify(state[study]);
   const buttons = [...document.querySelectorAll("[data-mapxlsx]")], label = btn.textContent;
   buttons.forEach(b => { b.disabled = true; }); btn.textContent = "Building the spreadsheet…";
   toast($("#calcstate").classList.contains("ready") ? "Building the map spreadsheet (about 20 seconds)" : "Loading the calculator, then building the map spreadsheet");
   try {
     const py = await pyReady;
     await new Promise(r => setTimeout(r, 60));   // let the button text paint before Python takes the thread
-    const r = JSON.parse(py.globals.get("map_xlsx")(JSON.stringify(des)));
+    const r = JSON.parse(py.globals.get("map_xlsx")(study, params, des));
     if (!r.ok) throw new Error(r.error);
-    save(`${slug(des.name || "engine")}_maps.xlsx`, Uint8Array.from(atob(r.b64), c => c.charCodeAt(0)), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    const name = study === "turbofan" ? "turbofan" : (JSON.parse(des).name || "engine");
+    save(`${slug(name)}_maps.xlsx`, Uint8Array.from(atob(r.b64), c => c.charCodeAt(0)), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     toast("Map spreadsheet downloaded");
   } catch (e) { toast("The spreadsheet could not be built: " + e.message); }
   buttons.forEach(b => { b.disabled = false; }); btn.textContent = label;
 }
-const mapXlsxButton = (cls) => `<button class="btn ${cls}" data-mapxlsx onclick="saveMapXlsx(this)">Map spreadsheet (XLSX)</button>`;
+const mapXlsxButton = (study, cls) => `<button class="btn ${cls}" data-mapxlsx onclick="saveMapXlsx(this, '${study}')">Map spreadsheet (XLSX)</button>`;
 function studyDownloads(study){
   const s = results[study].section;
   return `<div class="downloads"><button class="btn" onclick="Object.keys(results['${study}'].section.figures).forEach(n=>saveSvg('${study}',n))">All charts (SVG)</button>
     <button class="btn" onclick="Object.keys(results['${study}'].section.tables).forEach(n=>saveCsv('${study}',n))">All tables (CSV)</button>
-    ${study === "engine" && MAP_FIGS.some(n => s.figures[n]) ? mapXlsxButton("") : ""}</div>
-    ${study === "engine" && MAP_FIGS.some(n => s.figures[n]) ? `<p class="figtext">The map spreadsheet works the compressor and turbine maps out in Excel: your inputs in a table, every stage of every map point as a live formula, and native Excel charts drawn from those cells.</p>` : ""}`;
+    ${hasMaps(study) ? mapXlsxButton(study, "") : ""}</div>
+    ${hasMaps(study) ? `<p class="figtext">The map spreadsheet works the compressor and turbine maps out in Excel: your inputs in a table, every stage of every map point as a live formula, and native Excel charts drawn from those cells.</p>` : ""}`;
 }
 function results_(p){
   const sp = SPEC[p.id];

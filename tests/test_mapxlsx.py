@@ -8,7 +8,7 @@ import pytest
 
 from gtperf.app import core
 from gtperf.mapgen import CompressorStages, _StackedCompressor
-from gtperf.mapxlsx import engine_map_workbook
+from gtperf.mapxlsx import engine_map_workbook, turbofan_map_workbook
 
 needs_lo = pytest.mark.skipif(not libreoffice.available(), reason="LibreOffice with Python UNO not installed")
 
@@ -78,3 +78,14 @@ def test_libreoffice_recalculates_the_same_values_and_follows_inputs(workbook, t
                 n_checked += 1
         assert n_checked > 20
         doc.close(True)
+
+
+def test_turbofan_workbook_has_every_component():
+    checks = {}
+    data = turbofan_map_workbook(core.turbofan_engine(), None, checks)
+    wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True)
+    assert wb.sheetnames == ["Read me", "Inputs", "Fan", "Fan stages", "Booster", "Booster stages", "HPC",
+                             "HPC stages", "HPT", "HPT stages", "LPT", "LPT stages"]
+    for name, c in checks.items():
+        for n, w, pr, eta, *_ in c["points"]:
+            assert (pr, eta) == pytest.approx(c["python"].point(n, w)[:2], rel=1e-8), (name, n, w)

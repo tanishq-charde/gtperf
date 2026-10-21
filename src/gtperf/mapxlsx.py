@@ -171,6 +171,8 @@ class _Book:
 
 
 class _Sheet:
+    alias = "c"  # compressor formulas are written with c_ names; a sheet for another compressor renames them
+
     def __init__(self, book, ws, name):
         self.book, self.ws, self.name = book, ws, name
         ws.hide_gridlines(2)
@@ -207,6 +209,8 @@ class _Sheet:
 
     def calc(self, row, col, formula, fmt="calc"):
         self._claim(row, col)
+        if self.alias != "c":
+            formula = re.sub(r"\bc_", self.alias + "_", formula)
         value = self.book.ev(formula, self.name)
         if isinstance(value, complex) or (isinstance(value, float) and not math.isfinite(value)):
             raise ValueError(f"{self.name}!{_a1(row, col)} = {formula} gives {value}")
@@ -215,6 +219,8 @@ class _Sheet:
         return float(value)
 
     def name_cell(self, name, row, col):
+        if self.alias != "c":
+            name = re.sub(r"^c_", self.alias + "_", name)
         self.book.wb.define_name(name, f"='{self.name}'!{_a1(row, col, True)}")
         key = name.lower()
         if key in self.book.ev.names:
@@ -310,6 +316,15 @@ def _newton_columns(prefix, label, steps=NEWTON_STEPS):
 # --- inputs ------------------------------------------------------------------------------------------
 
 @dataclass(frozen=True)
+class CompressorDesign:
+    title: str
+    prefix: str  # name prefix in the workbook, one letter
+    pressure_ratio: float
+    polytropic_eff: float
+    stages: CompressorStages
+
+
+@dataclass(frozen=True)
 class TurbineDesign:
     title: str
     prefix: str  # name prefix in the workbook, one letter
@@ -319,7 +334,7 @@ class TurbineDesign:
     stages: TurbineStages
 
 
-def _inputs(book, name, comp_pr, comp_eta, cs: CompressorStages, turbines):
+def _inputs(book, name, compressors, turbines, point):
     sh = book.sheet("Inputs")
     ws = sh.ws
     ws.set_column(0, 0, 44)
@@ -333,41 +348,46 @@ def _inputs(book, name, comp_pr, comp_eta, cs: CompressorStages, turbines):
     r = sh.quantities(3, "Reference conditions and gas properties", [
         ("Reference total temperature", "g_Tref", "T_ref", T_REF, "K", "Map corrected to ISO conditions", "input"),
         ("Reference total pressure", "g_Pref", "P_ref", P_REF, "Pa", "Map corrected to ISO conditions", "input"),
-        ("Ratio of specific heats, compressor", "c_gamma", "γ", 1.4, "", "Perfect gas", "input"),
-        ("Specific heat, compressor", "c_cp", "cp", 1004.5, "J/(kg K)", "Perfect gas", "input"),
-        ("Ratio of specific heats, turbines", "t_gamma", "γ", 1.33, "", "Perfect gas", "input"),
-        ("Specific heat, turbines", "t_cp", "cp", 1150.0, "J/(kg K)", "Perfect gas", "input"),
-        ("Turbine efficiency loss past choke", "t_cpost", "c", POST_CHOKE_LOSS, "",
+        ("Ratio of specific heats, compressor", "g_ga", "γ", 1.4, "", "Perfect gas", "input"),
+        ("Specific heat, compressor", "g_cpa", "cp", 1004.5, "J/(kg K)", "Perfect gas", "input"),
+        ("Ratio of specific heats, turbines", "g_gt", "γ", 1.33, "", "Perfect gas", "input"),
+        ("Specific heat, turbines", "g_cpt", "cp", 1150.0, "J/(kg K)", "Perfect gas", "input"),
+        ("Turbine efficiency loss past choke", "g_cpost", "c", POST_CHOKE_LOSS, "",
          "η = η_choke (1 − c x²) past choke", "input"),
     ])
-    r = sh.quantities(r, "Compressor design point (from the engine cycle)", [
-        ("Compressor pressure ratio", "c_PR", "π_c", comp_pr, "", "Engine design input", "input"),
-        ("Compressor polytropic efficiency", "c_etap", "η_p", comp_eta, "", "Engine design input", "input"),
-    ])
-    r = sh.quantities(r, "Compressor stage design", [
-        ("Number of stages", "c_N", "N", cs.stages, "", "Sets the number of rows in the stage tables", "fixed"),
-        ("Stage loading", "c_psi", "ψ", cs.loading, "", "ψ = Δh₀ / U²", "input"),
-        ("Flow coefficient", "c_phi", "φ", cs.flow_coefficient, "", "φ = Va / U", "input"),
-        ("Stage reaction", "c_Rx", "Λ", cs.reaction, "", "Share of the stage static enthalpy rise in the rotor",
-         "input"),
-        ("Blade solidity", "c_sigma", "σ", cs.solidity, "", "Chord / pitch, used in the diffusion factor", "input"),
-        ("Diffusion factor at stall", "c_DFlim", "DF_lim", cs.df_limit, "", "Lieblein limit", "input"),
-        ("Incidence range", "c_irange", "i_range", cs.incidence_range, "°", "Incidence that doubles a row's loss",
-         "input"),
-        ("Variable vane rows", "c_vrows", "n_v", cs.variable_rows, "", "VIGV plus variable stators", "input"),
-        ("VIGV angle fully closed", "c_vclosed", "θ_c", cs.vane_closed, "°", "Negative = closed", "input"),
-        ("Vanes fully open above corrected speed", "c_vopen_n", "N_open", cs.vane_open_speed, "",
-         "Relative corrected speed", "input"),
-        ("Vanes fully closed below corrected speed", "c_vshut_n", "N_closed", cs.vane_closed_speed, "",
-         "Relative corrected speed", "input"),
-    ])
+    for c in compressors:
+        cs = c.stages
+        sh.alias = c.prefix
+        r = sh.quantities(r, f"{c.title} design point (from the engine cycle)", [
+            (f"{c.title} pressure ratio", "c_PR", "π_c", c.pressure_ratio, "", "Engine design input", "input"),
+            (f"{c.title} polytropic efficiency", "c_etap", "η_p", c.polytropic_eff, "", "Engine design input", "input"),
+        ])
+        r = sh.quantities(r, f"{c.title} stage design", [
+            ("Number of stages", "c_N", "N", cs.stages, "", "Sets the number of rows in the stage tables", "fixed"),
+            ("Stage loading", "c_psi", "ψ", cs.loading, "", "ψ = Δh₀ / U²", "input"),
+            ("Flow coefficient", "c_phi", "φ", cs.flow_coefficient, "", "φ = Va / U", "input"),
+            ("Stage reaction", "c_Rx", "Λ", cs.reaction, "", "Share of the stage static enthalpy rise in the rotor",
+             "input"),
+            ("Blade solidity", "c_sigma", "σ", cs.solidity, "", "Chord / pitch, used in the diffusion factor", "input"),
+            ("Diffusion factor at stall", "c_DFlim", "DF_lim", cs.df_limit, "", "Lieblein limit", "input"),
+            ("Incidence range", "c_irange", "i_range", cs.incidence_range, "°", "Incidence that doubles a row's loss",
+             "input"),
+            ("Variable vane rows", "c_vrows", "n_v", cs.variable_rows, "", "VIGV plus variable stators", "input"),
+            ("VIGV angle fully closed", "c_vclosed", "θ_c", cs.vane_closed, "°", "Negative = closed", "input"),
+            ("Vanes fully open above corrected speed", "c_vopen_n", "N_open", cs.vane_open_speed, "",
+             "Relative corrected speed", "input"),
+            ("Vanes fully closed below corrected speed", "c_vshut_n", "N_closed", cs.vane_closed_speed, "",
+             "Relative corrected speed", "input"),
+        ])
+    sh.alias = "c"
     for t in turbines:
         p, s = t.prefix, t.stages
         r = sh.quantities(r, f"{t.title} design point (from the engine cycle)", [
             (f"{t.title} expansion ratio", f"{p}_PR", "π_t", t.pressure_ratio, "", "Engine cycle, total to total",
              "input"),
             (f"{t.title} isentropic efficiency", f"{p}_eta", "η_t", t.efficiency, "", "Engine cycle", "input"),
-            (f"{t.title} inlet total temperature", f"{p}_Tin", "T₀in", t.t_in, "K", "Engine cycle at ISO", "input"),
+            (f"{t.title} inlet total temperature", f"{p}_Tin", "T₀in", t.t_in, "K", f"Engine cycle at {point}",
+             "input"),
         ])
         r = sh.quantities(r, f"{t.title} stage design", [
             ("Number of stages", f"{p}_N", "N", s.stages, "", "Sets the number of rows in the stage tables", "fixed"),
@@ -383,23 +403,25 @@ def _inputs(book, name, comp_pr, comp_eta, cs: CompressorStages, turbines):
 
 # --- compressor --------------------------------------------------------------------------------------
 
-def _compressor(book, pr, eta_p, cs: CompressorStages):
+def _compressor(book, comp: CompressorDesign):
+    pr, eta_p, cs, title = comp.pressure_ratio, comp.polytropic_eff, comp.stages, comp.title
     cmap = compressor_map(pr, eta_p, cs)
     py = _StackedCompressor(pr, eta_p, cs)
     n_st = int(cs.stages)
-    sh, st = book.sheet("Compressor"), book.sheet("Compressor stages")
+    sh, st = book.sheet(title), book.sheet(f"{title} stages")
+    sh.alias = st.alias = comp.prefix
     ws = sh.ws
     ws.set_column(0, 0, 40)
     ws.set_column(1, 30, 12.5)
     sh.eq_span = 4
-    sh.put(0, 0, "Compressor map by mean-line stage stacking", "title")
+    sh.put(0, 0, f"{title} map by mean-line stage stacking", "title")
     sh.put(1, 0, "Design-point triangles and stage sizing here; every map point is stacked stage by stage on the "
-           "'Compressor stages' sheet. Green values are search results from GTPerf (see Read me).", "note")
+           f"'{title} stages' sheet. Green values are search results from GTPerf (see Read me).", "note")
     r = sh.quantities(3, "Design-point derivation", [
-        ("Gas constant", "c_R", "R", "c_cp*(c_gamma-1)/c_gamma", "J/(kg K)", "R = cp (γ − 1) / γ", "calc"),
-        ("Exponent (γ − 1) / γ", "c_k", "k", "(c_gamma-1)/c_gamma", "", "k = (γ − 1) / γ", "calc"),
+        ("Gas constant", "c_R", "R", "g_cpa*(g_ga-1)/g_ga", "J/(kg K)", "R = cp (γ − 1) / γ", "calc"),
+        ("Exponent (γ − 1) / γ", "c_k", "k", "(g_ga-1)/g_ga", "", "k = (γ − 1) / γ", "calc"),
         ("Total temperature ratio", "c_tau", "τ", "c_PR^(c_k/c_etap)", "", "τ = π^(k / η_p)", "calc"),
-        ("Stage total enthalpy rise", "c_dh", "Δh₀", "c_cp*g_Tref*(c_tau-1)/c_N", "J/kg",
+        ("Stage total enthalpy rise", "c_dh", "Δh₀", "g_cpa*g_Tref*(c_tau-1)/c_N", "J/kg",
          "Δh₀ = cp T_ref (τ − 1) / N, equal for every stage", "calc"),
         ("Mean blade speed at design", "c_U", "U", "SQRT(c_dh/c_psi)", "m/s", "U = √(Δh₀ / ψ)", "calc"),
         ("Axial velocity at design", "c_Va", "Va", "c_phi*c_U", "m/s", "Va = φ U", "calc"),
@@ -439,10 +461,10 @@ def _compressor(book, pr, eta_p, cs: CompressorStages):
         sd.put(i, "j", i + 1)
         sd.calc(i, "T0", "g_Tref" if i == 0 else p.T0o)
         sd.calc(i, "P0", "g_Pref" if i == 0 else p.P0o)
-        sd.calc(i, "T", f"{x.T0}-c_Va^2*(1+c_ta1^2)/(2*c_cp)")
+        sd.calc(i, "T", f"{x.T0}-c_Va^2*(1+c_ta1^2)/(2*g_cpa)")
         sd.calc(i, "P", f"{x.P0}*({x.T}/{x.T0})^(1/c_k)")
         sd.calc(i, "A", f"1/({x.P}/(c_R*{x.T})*c_Va)")
-        sd.calc(i, "taus", f"1+c_dh/(c_cp*{x.T0})")
+        sd.calc(i, "taus", f"1+c_dh/(g_cpa*{x.T0})")
         sd.calc(i, "eta", f"({x.taus}^c_etap-1)/({x.taus}-1)")
         sd.calc(i, "loss", f"(1-{x.eta})*c_dh")
         sd.calc(i, "P0o", f"{x.P0}*{x.taus}^(c_etap/c_k)")
@@ -541,7 +563,7 @@ def _compressor(book, pr, eta_p, cs: CompressorStages):
         _Column("P0o", "P₀ out (Pa)", "P₀ ratio^(1/k)", "calcg", 11),
         _Column("T0o", "T₀ out (K)", "T₀ + Δh₀ / cp", "calc4", 9),
     ]
-    st.put(0, 0, "Compressor stage stacking: one row per stage of every map point", "title")
+    st.put(0, 0, f"{title} stage stacking: one row per stage of every map point", "title")
     st.put(1, 0, "Blade-row exit angles are fixed off design, annulus areas come from the design sizing, each "
            "stage's axial velocity solves continuity at its own inlet (Newton columns).", "note")
     tb = _Table(st, 3, 0, cols)
@@ -571,11 +593,11 @@ def _compressor(book, pr, eta_p, cs: CompressorStages):
             tb.calc(k, "va0", f"{x.F}/{x.rho0}")
             for s in range(1, NEWTON_STEPS + 1):
                 v = getattr(x, f"va{s - 1}")
-                th = f"(1-{v}^2*{x.c2}/(2*c_cp*{x.T0}))"
-                tb.calc(k, f"va{s}", f"{v}-({x.rho0}*{v}*{th}^(1/(c_gamma-1))-{x.F})/({x.rho0}*{th}^(1/(c_gamma-1))"
-                                    f"*(1-{v}^2*{x.c2}/((c_gamma-1)*c_cp*{x.T0}*{th})))")
+                th = f"(1-{v}^2*{x.c2}/(2*g_cpa*{x.T0}))"
+                tb.calc(k, f"va{s}", f"{v}-({x.rho0}*{v}*{th}^(1/(g_ga-1))-{x.F})/({x.rho0}*{th}^(1/(g_ga-1))"
+                                    f"*(1-{v}^2*{x.c2}/((g_ga-1)*g_cpa*{x.T0}*{th})))")
             va = getattr(x, v_last)
-            tb.calc(k, "res", f"{x.rho0}*{va}*(1-{va}^2*{x.c2}/(2*c_cp*{x.T0}))^(1/(c_gamma-1))/{x.F}-1")
+            tb.calc(k, "res", f"{x.rho0}*{va}*(1-{va}^2*{x.c2}/(2*g_cpa*{x.T0}))^(1/(g_ga-1))/{x.F}-1")
             tb.calc(k, "dh", f"{x.U}*({x.U}-{va}*({x.ta}+c_tb2))")
             tb.calc(k, "wt1", f"{x.U}-{va}*{x.ta}")
             tb.calc(k, "wt2", f"{va}*c_tb2")
@@ -590,9 +612,9 @@ def _compressor(book, pr, eta_p, cs: CompressorStages):
             tb.calc(k, "h", f"0.5*({x.w1}^2*(1+({x.ir}/c_irange)^2)+{x.v2}^2*(1+({x.ist}/c_irange)^2))")
             tb.calc(k, "df", f"MAX(1-{x.w2}/{x.w1}+ABS({x.wt1}-{x.wt2})/(2*c_sigma*{x.w1}),"
                              f"1-{x.v3}/{x.v2}+ABS({x.vt2}-{x.vt3})/(2*c_sigma*{x.v2}))")
-            tb.calc(k, "ratio", f"1+({x.dh}-{d.loss}*{x.h}/c_head)/(c_cp*{x.T0})")
+            tb.calc(k, "ratio", f"1+({x.dh}-{d.loss}*{x.h}/c_head)/(g_cpa*{x.T0})")
             tb.calc(k, "P0o", f"{x.P0}*{x.ratio}^(1/c_k)")
-            tb.calc(k, "T0o", f"{x.T0}+{x.dh}/c_cp")
+            tb.calc(k, "T0o", f"{x.T0}+{x.dh}/g_cpa")
         k0, k1 = i * n_st, i * n_st + n_st - 1
         last = tb.row(k1, sh)
         mp.calc(i, "pr", f"{last.P0o}/g_Pref")
@@ -628,7 +650,7 @@ def _compressor(book, pr, eta_p, cs: CompressorStages):
         su.calc(li, "w", mp.sh.ref(mp.r(i), mp.index["w"], False))
         su.calc(li, "pr", mp.sh.ref(mp.r(i), mp.index["pr"], False))
 
-    _compressor_charts(book, sh, mp, su, lines, len(points) - 1)
+    _compressor_charts(book, sh, mp, su, lines, len(points) - 1, title)
     checks = [(mp.value(i, "n"), mp.value(i, "w"), mp.value(i, "pr"), mp.value(i, "eta"), mp.value(i, "sm"),
                mp.value(i, "smr")) for i in range(len(points))]
     return {"points": checks, "python": py, "map": cmap}
@@ -644,7 +666,7 @@ def _labels(count, text):
             "font": {"size": 7, "color": NAVY}}
 
 
-def _compressor_charts(book, sh, mp, su, lines, n_design):
+def _compressor_charts(book, sh, mp, su, lines, n_design, title):
     wb, nb = book.wb, len(R_LINES)
     c1 = wb.add_chart({"type": "scatter", "subtype": "straight"})
     c2 = wb.add_chart({"type": "scatter", "subtype": "straight"})
@@ -670,10 +692,10 @@ def _compressor_charts(book, sh, mp, su, lines, n_design):
                           "marker": {"type": "circle", "size": 7, "fill": {"color": AMBER},
                                      "border": {"color": "white"}}})
     grid = {"visible": True, "line": {"color": "#E3E3E3"}}
-    for chart, title, y_axis in ((c1, "Compressor map", {"name": "Pressure ratio", "min": 1}),
-                                 (c2, "Compressor efficiency", {"name": "Isentropic efficiency", "min": 0.5, "max": 1,
+    for chart, name, y_axis in ((c1, f"{title} map", {"name": "Pressure ratio", "min": 1}),
+                                (c2, f"{title} efficiency", {"name": "Isentropic efficiency", "min": 0.5, "max": 1,
                                                                 "num_format": "0%"})):
-        chart.set_title({"name": title, "name_font": {"size": 12, "bold": True, "color": NAVY}})
+        chart.set_title({"name": name, "name_font": {"size": 12, "bold": True, "color": NAVY}})
         chart.set_x_axis({"name": "Corrected flow (relative to design)", "min": 0, "major_gridlines": grid,
                           "num_font": {"size": 8}})
         chart.set_y_axis({**y_axis, "major_gridlines": grid, "num_font": {"size": 8}})
@@ -699,9 +721,9 @@ def _turbine(book, t: TurbineDesign):
     sh.put(1, 0, f"Design-point triangles and throat sizing here; every map point is stacked row by row on the "
            f"'{t.title} stages' sheet. Green values are search results from GTPerf (see Read me).", "note")
     r = sh.quantities(3, "Design-point derivation", [
-        ("Gas constant", f"{p}_R", "R", "t_cp*(t_gamma-1)/t_gamma", "J/(kg K)", "R = cp (γ − 1) / γ", "calc"),
-        ("Exponent (γ − 1) / γ", f"{p}_k", "k", "(t_gamma-1)/t_gamma", "", "k = (γ − 1) / γ", "calc"),
-        ("Total work", f"{p}_dh", "Δh₀", f"t_cp*{p}_Tin*{p}_eta*(1-{p}_PR^(-{p}_k))", "J/kg",
+        ("Gas constant", f"{p}_R", "R", "g_cpt*(g_gt-1)/g_gt", "J/(kg K)", "R = cp (γ − 1) / γ", "calc"),
+        ("Exponent (γ − 1) / γ", f"{p}_k", "k", "(g_gt-1)/g_gt", "", "k = (γ − 1) / γ", "calc"),
+        ("Total work", f"{p}_dh", "Δh₀", f"g_cpt*{p}_Tin*{p}_eta*(1-{p}_PR^(-{p}_k))", "J/kg",
          "Δh₀ = cp T₀in η (1 − π^−k)", "calc"),
         ("Mean blade speed at design", f"{p}_U", "U", f"SQRT({p}_dh/{p}_N/{p}_psi)", "m/s", "U = √(Δh₀ / (N ψ))",
          "calc"),
@@ -750,16 +772,16 @@ def _turbine(book, t: TurbineDesign):
         sd.calc(i, "T0", f"{p}_Tin" if i == 0 else q.T0o)
         sd.calc(i, "P0", "g_Pref" if i == 0 else q.P0o)
         sd.calc(i, "V2", f"{p}_Va^2*(1+{p}_ta2^2)")
-        sd.calc(i, "T2", f"{x.T0}-{x.V2}/(2*t_cp)")
-        sd.calc(i, "P2", f"{x.P0}*(({x.T2}-{p}_zeta*{x.V2}/(2*t_cp))/{x.T0})^(1/{p}_k)")
+        sd.calc(i, "T2", f"{x.T0}-{x.V2}/(2*g_cpt)")
+        sd.calc(i, "P2", f"{x.P0}*(({x.T2}-{p}_zeta*{x.V2}/(2*g_cpt))/{x.T0})^(1/{p}_k)")
         area(i, "An", f"1/({x.P2}/({p}_R*{x.T2})*{p}_Va)", py.a_noz[i])
         sd.calc(i, "W2", f"{p}_Va^2+({p}_Va*{p}_ta2-{p}_U)^2")
         sd.calc(i, "W3", f"{p}_Va^2*(1+{p}_tb3^2)")
-        sd.calc(i, "T3", f"{x.T2}+({x.W2}-{x.W3})/(2*t_cp)")
-        sd.calc(i, "P3", f"{x.P2}*(({x.T3}-{p}_zeta*{x.W3}/(2*t_cp))/{x.T2})^(1/{p}_k)")
+        sd.calc(i, "T3", f"{x.T2}+({x.W2}-{x.W3})/(2*g_cpt)")
+        sd.calc(i, "P3", f"{x.P2}*(({x.T3}-{p}_zeta*{x.W3}/(2*g_cpt))/{x.T2})^(1/{p}_k)")
         area(i, "Ar", f"1/({x.P3}/({p}_R*{x.T3})*{p}_Va)", py.a_rot[i])
         sd.calc(i, "vt3", f"{p}_U-{p}_Va*{p}_tb3")
-        sd.calc(i, "T0o", f"{x.T3}+({p}_Va^2+{x.vt3}^2)/(2*t_cp)")
+        sd.calc(i, "T0o", f"{x.T3}+({p}_Va^2+{x.vt3}^2)/(2*g_cpt)")
         sd.calc(i, "P0o", f"{x.P3}*({x.T0o}/{x.T3})^(1/{p}_k)")
     last = sd.row(n_st - 1)
     r = sd.r(n_st) + 1
@@ -891,7 +913,7 @@ def _turbine(book, t: TurbineDesign):
                 tb.calc(k, "sw", q.swo)
                 tb.calc(k, "zn", f"{p}_zeta*(1+(DEGREES(ATAN({x.sw})-{p}_a3d)/{p}_irange)^2)")
             tb.calc(k, "Fn", f"{x.w}/{d.An}")
-            tb.calc(k, "cn", f"(1+{p}_ta2^2)/(2*t_cp)")
+            tb.calc(k, "cn", f"(1+{p}_ta2^2)/(2*g_cpt)")
             va2, res = newton(k, "v", f"{x.Fn}*{p}_R*{x.T0}/{x.P0}", x.Fn, x.P0, x.T0, x.T0, x.zn, x.cn)
             tb.calc(k, "resn", res)
             tb.calc(k, "t2", f"{x.T0}-{x.cn}*{va2}^2")
@@ -901,15 +923,15 @@ def _turbine(book, t: TurbineDesign):
             tb.calc(k, "ir", f"DEGREES(ATAN2({va2},{x.wt2})-{p}_b2d)")
             tb.calc(k, "zr", f"{p}_zeta*(1+({x.ir}/{p}_irange)^2)")
             tb.calc(k, "Fr", f"{x.w}/{d.Ar}")
-            tb.calc(k, "cr", f"(1+{p}_tb3^2)/(2*t_cp)")
-            tb.calc(k, "A", f"{x.t2}+{x.w2}/(2*t_cp)")
+            tb.calc(k, "cr", f"(1+{p}_tb3^2)/(2*g_cpt)")
+            tb.calc(k, "A", f"{x.t2}+{x.w2}/(2*g_cpt)")
             va3, res = newton(k, "u", f"{x.Fr}*{p}_R*{x.A}/({x.p2}*({x.A}/{x.t2})^(1/{p}_k))", x.Fr, x.p2, x.A, x.t2,
                               x.zr, x.cr)
             tb.calc(k, "resr", res)
             tb.calc(k, "t3", f"{x.A}-{x.cr}*{va3}^2")
             tb.calc(k, "p3", f"{x.p2}*(({x.A}-(1+{x.zr})*{x.cr}*{va3}^2)/{x.t2})^(1/{p}_k)")
             tb.calc(k, "vt3", f"{x.U}-{va3}*{p}_tb3")
-            tb.calc(k, "T0o", f"{x.t3}+({va3}^2+{x.vt3}^2)/(2*t_cp)")
+            tb.calc(k, "T0o", f"{x.t3}+({va3}^2+{x.vt3}^2)/(2*g_cpt)")
             tb.calc(k, "P0o", f"{x.p3}*({x.T0o}/{x.t3})^(1/{p}_k)")
             tb.calc(k, "swo", f"{x.vt3}/{va3}")
         last = tb.row(k0 * n_st + n_st - 1, sh)
@@ -926,7 +948,7 @@ def _turbine(book, t: TurbineDesign):
             mp.calc(i, "w", ch.w)
             mp.calc(i, "pr", f"{ch.pr}+(MAX({p}_PRmax,{ch.pr})-{ch.pr})*{m}/{CHOKE_EXTENSION}")
             mp.calc(i, "xc", f"(1-{x.pr}^(-{p}_k))/(1-{ch.pr}^(-{p}_k))-1")
-            mp.calc(i, "eta", f"{ch.eta}*(1-t_cpost*{x.xc}^2)")
+            mp.calc(i, "eta", f"{ch.eta}*(1-g_cpost*{x.xc}^2)")
     _turbine_charts(book, sh, mp, lines, blocks, t)
     checks = [(mp.value(i, "n"), mp.value(i, "w"), mp.value(i, "pr"), mp.value(i, "eta")) for i in stage_rows]
     return {"points": checks, "python": py}
@@ -973,7 +995,7 @@ def _turbine_charts(book, sh, mp, lines, blocks, t):
 
 # --- read me -----------------------------------------------------------------------------------------
 
-def _readme(book, name, version, turbines):
+def _readme(book, name, version, compressors, turbines, point):
     sh = book.sheet("Read me")
     ws = sh.ws
     ws.set_column(0, 0, 26)
@@ -983,12 +1005,13 @@ def _readme(book, name, version, turbines):
     rows = [
         ("Engine", name),
         ("Made with", f"GTPerf {version} (gtperf Python package), github.com/tanishq-charde/gtperf"),
-        ("What this is", "The compressor and turbine maps of this engine, worked out in Excel by mean-line stage "
+        ("What this is", "The compressor and turbine maps of this engine (" + ", ".join(
+            c.title for c in [*compressors, *turbines]) + "), worked out in Excel by mean-line stage "
                          "stacking from the design values on the Inputs sheet. Every map point is a formula, and the "
                          "charts are drawn from those cells."),
-        ("Sheets", "Inputs: the design values. Compressor and each turbine: design-point derivation, stage sizing, "
-                   "speed lines, map points and the charts. The '… stages' sheets: one row per stage of every map "
-                   "point, with the equation of each column under its heading."),
+        ("Sheets", "Inputs: the design values. Each compressor and turbine sheet: design-point derivation, stage "
+                   "sizing, speed lines, map points and the charts. The '… stages' sheets: one row per stage of every "
+                   "map point, with the equation of each column under its heading."),
         ("Colours", "Blue on cream: inputs, change freely. Black: formulas. Green: values GTPerf found by searching "
                     "(see below). Grey: layout values (number of stages) or labels."),
         ("Searched values", "Where each speed line starts and ends (surge and the choke end of a compressor line, "
@@ -1011,10 +1034,10 @@ def _readme(book, name, version, turbines):
         ("Continuity", f"Axial velocity at a given mass flux has no closed form, so it is solved by "
                        f"{NEWTON_STEPS} Newton steps in helper columns, started from the incompressible value "
                        f"(below the root, so each step moves towards it). The residual column shows the error."),
-        ("Gas", "Perfect gas: γ = 1.4, cp = 1004.5 J/(kg K) in the compressor; γ = 1.33, cp = 1150 J/(kg K) in the "
+        ("Gas", "Perfect gas: γ = 1.4, cp = 1004.5 J/(kg K) in compressors; γ = 1.33, cp = 1150 J/(kg K) in the "
                 "turbines. Maps are in relative corrected terms (1.0 = design)."),
-        ("Turbines", ", ".join(t.title for t in turbines) + ": inlet temperature and expansion ratio from the "
-                                                            "engine cycle at ISO."),
+        ("Design point", f"Pressure ratios, efficiencies and turbine inlet temperatures come from the engine cycle "
+                         f"at {point}. Compressor efficiencies are polytropic, turbine efficiencies isentropic."),
         ("Note", "The map points use R-lines 1 to 3 in steps of 0.2; GTPerf's own map also carries R-lines past "
                  "surge for its solver. Speed lines below 50 % are in the tables but not on the charts."),
     ]
@@ -1027,14 +1050,13 @@ def _readme(book, name, version, turbines):
 
 # --- entry -------------------------------------------------------------------------------------------
 
-def map_workbook(name, compressor, turbines, version="", checks=None):
-    """The maps of one engine as .xlsx bytes. compressor = (pressure ratio, polytropic efficiency,
-    CompressorStages); turbines = [TurbineDesign, ...]. With a `checks` dict, the evaluated map points of each
-    component are put in it for testing."""
+def map_workbook(name, compressors, turbines, version="", checks=None, point="ISO"):
+    """The maps of one engine as .xlsx bytes, for [CompressorDesign, ...] and [TurbineDesign, ...] at the
+    design point `point`. With a `checks` dict, the evaluated map points of each component are put in it."""
     book = _Book()
-    _readme(book, name, version, turbines)
-    _inputs(book, name, compressor[0], compressor[1], compressor[2], turbines)
-    out = {"Compressor": _compressor(book, *compressor)}
+    _readme(book, name, version, compressors, turbines, point)
+    _inputs(book, name, compressors, turbines, point)
+    out = {c.title: _compressor(book, c) for c in compressors}
     for t in turbines:
         out[t.title] = _turbine(book, t)
     book.wb.set_properties({"title": f"{name}: calculated maps", "author": "GTPerf", "comments":
@@ -1046,16 +1068,20 @@ def map_workbook(name, compressor, turbines, version="", checks=None):
     return data
 
 
-def engine_map_workbook(model, checks=None):
-    """The map workbook of a design-mode engine (`gtperf.app.core.design_engine`)."""
+def _release():
     from importlib.metadata import PackageNotFoundError, version
 
-    from .app.core import compressor_stages
-
     try:
-        release = version("gtperf")
+        return version("gtperf")
     except PackageNotFoundError:
-        from . import __version__ as release
+        from . import __version__
+
+        return __version__
+
+
+def engine_map_workbook(model, checks=None):
+    """The map workbook of a design-mode engine (`gtperf.app.core.design_engine`)."""
+    from .app.core import compressor_stages
 
     d, engine = model.datasheet, model.engine
     st = engine.design.stations
@@ -1065,8 +1091,38 @@ def engine_map_workbook(model, checks=None):
         stages = TurbineStages(int(d[f"{key}_stages"]), d[f"{key}_loading"], d[f"{key}_flow_coeff"],
                                d[f"{key}_reaction"])
         turbines.append(TurbineDesign(title, prefix, s_in.p / s_out.p, eff, s_in.t, stages))
-    return map_workbook(d.get("name") or "Engine", (d["pressure_ratio"], d["compressor_polytropic_eff"],
-                                                    compressor_stages(d)), turbines, release, checks)
+    compressor = CompressorDesign("Compressor", "c", d["pressure_ratio"], d["compressor_polytropic_eff"],
+                                  compressor_stages(d))
+    return map_workbook(d.get("name") or "Engine", [compressor], turbines, _release(), checks)
 
 
-__all__ = ["TurbineDesign", "map_workbook", "engine_map_workbook"]
+def turbofan_map_workbook(engine, stage_design=None, checks=None):
+    """The map workbook of the Turbofan study's engine (`gtperf.app.core.turbofan_engine`): fan, booster,
+    HPC, HPT and LPT, as the engine builds them at its cruise design point."""
+    from .aero_offdesign import _turbine_eff
+    from .app.core import TURBOFAN_STAGE_DEFAULTS, turbofan_stage_designs
+    from .mapgen import polytropic_from_isentropic
+
+    cy, st = engine.cycle, engine.design.stations
+    sd = turbofan_stage_designs({**TURBOFAN_STAGE_DEFAULTS, **(stage_design or {})})
+
+    def poly(e, pr):
+        return e if cy.compressor_polytropic else polytropic_from_isentropic(pr, e)
+
+    core_pr = cy.fan_core_pr or cy.fan_pr
+    compressors = [CompressorDesign("Fan", "f", cy.fan_pr, poly(cy.fan_eff, cy.fan_pr), sd["fan"])]
+    if engine.has_booster:
+        b_pr = core_pr / cy.fan_pr
+        compressors.append(CompressorDesign("Booster", "b", b_pr, poly(cy.booster_eff, b_pr), sd["booster"]))
+    compressors.append(CompressorDesign("HPC", "c", cy.hpc_pr, poly(cy.hpc_eff, cy.hpc_pr), sd["hpc"]))
+    turbines = [
+        TurbineDesign("HPT", "h", engine.pr_hpt_design, _turbine_eff(st["41"], st["44"]), st["41"].t, sd["hpt"]),
+        TurbineDesign("LPT", "l", engine.pr_lpt_design, _turbine_eff(st["49"], st["5"]), st["49"].t, sd["lpt"]),
+    ]
+    flight = engine.design_flight
+    name = f"Turbofan, BPR {cy.bpr:g}, FPR {cy.fan_pr:g}, HPC PR {cy.hpc_pr:g}"
+    return map_workbook(name, compressors, turbines, _release(), checks,
+                        point=f"cruise ({flight.altitude_m:g} m, Mach {flight.mach:g})")
+
+
+__all__ = ["CompressorDesign", "TurbineDesign", "map_workbook", "engine_map_workbook", "turbofan_map_workbook"]

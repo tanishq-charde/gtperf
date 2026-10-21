@@ -1200,6 +1200,19 @@ def turbofan_stage_designs(sd):
     }
 
 
+def turbofan_engine(bpr=10.0, fan_pr=1.5, fan_core_pr=2.4, hpc_pr=17.0, tet_cruise=1600.0, thrust_kN=22.0,
+                    altitude_m=10668.0, mach=0.78, stage_design=None):
+    """The off-design turbofan of the Turbofan study, on maps calculated from its stage design."""
+    from ..aero import Flight, Turbofan
+    from ..aero_offdesign import TurbofanEngine
+
+    cruise = Flight(altitude_m, mach)
+    cycle = Turbofan(bpr=bpr, fan_pr=fan_pr, fan_core_pr=fan_core_pr, hpc_pr=hpc_pr, tet=tet_cruise, hp_offtake=150e3)
+    w = cycle.size_for_thrust(thrust_kN * 1e3, cruise)
+    sd = {**TURBOFAN_STAGE_DEFAULTS, **(stage_design or {})}
+    return TurbofanEngine(cycle, w, cruise, stage_designs=turbofan_stage_designs(sd))
+
+
 def turbofan_section(
     bpr=10.0,
     fan_pr=1.5,
